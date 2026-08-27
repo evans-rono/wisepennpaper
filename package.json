@@ -1,0 +1,35 @@
+{
+  "name": "wise-pen-business-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "seed": "node src/seed.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "csurf": "^1.11.0",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.1",
+    "express-session": "^1.18.2",
+    "helmet": "^8.1.0",
+    "memorystore": "^1.6.7",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.5",
+    "sanitize-html": "^2.17.0",
+    "slugify": "^1.6.6",
+    "zod": "^4.0.14"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
+  }
+}
