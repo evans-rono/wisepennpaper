@@ -1,5 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
-const db = new Database(process.env.DB_PATH || 'wise-pen.db');
+const file = process.env.DB_PATH || 'wise-pen.db';
+fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
+const db = new Database(file);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.exec(`
@@ -23,4 +27,22 @@ CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, project_id INTEGER N
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY, user_id INTEGER, action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT, ip TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 `);
+// Columns added after the initial schema. CREATE TABLE IF NOT EXISTS leaves an
+// existing table untouched, so each one is added explicitly and only if absent.
+const ADDED_COLUMNS = [
+  ['users', 'totp_secret', 'TEXT'],
+  ['users', 'totp_enabled', 'INTEGER DEFAULT 0'],
+  ['users', 'totp_confirmed_at', 'TEXT'],
+  ['users', 'recovery_codes', "TEXT DEFAULT '[]'"],
+  ['users', 'last_totp_step', 'INTEGER'],
+  ['users', 'last_login_at', 'TEXT'],
+  ['users', 'sessions_valid_from', 'TEXT'],
+  ['users', 'is_active', 'INTEGER DEFAULT 1'],
+  ['users', 'created_by', 'INTEGER'],
+];
+for (const [table, column, definition] of ADDED_COLUMNS) {
+  const present = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 export default db;
