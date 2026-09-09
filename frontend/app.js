@@ -105,6 +105,20 @@ function bindAuth() {
       location.href = homeFor(res.user);
     });
   }
+
+  document.querySelectorAll('[data-password-reset]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const form = button.closest('form');
+      const email = form?.email?.value.trim() || '';
+      if (!email) return setStatus(form, 'Enter your email address first.', false);
+      try {
+        await postJson('/api/auth/forgot-password', { email });
+        setStatus(form, 'If the account exists, an email with a reset link and six-digit verification code has been sent.');
+      } catch (error) {
+        setStatus(form, error.message, false);
+      }
+    });
+  });
 }
 
 /* --------------------------------------------------------------- services */

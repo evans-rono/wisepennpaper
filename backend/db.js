@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS quotations(id INTEGER PRIMARY KEY, quote_request_id I
 CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, sender_id INTEGER NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY, user_id INTEGER, action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT, ip TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS password_reset_tokens(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, token_hash TEXT UNIQUE NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS login_devices(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, fingerprint TEXT NOT NULL, ip TEXT NOT NULL, user_agent TEXT, last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP, created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id,fingerprint), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
 // Columns added after the initial schema. CREATE TABLE IF NOT EXISTS leaves an
 // existing table untouched, so each one is added explicitly and only if absent.
@@ -39,6 +41,9 @@ const ADDED_COLUMNS = [
   ['users', 'sessions_valid_from', 'TEXT'],
   ['users', 'is_active', 'INTEGER DEFAULT 1'],
   ['users', 'created_by', 'INTEGER'],
+  ['files', 'scan_status', "TEXT DEFAULT 'clean'"],
+  ['files', 'storage_driver', "TEXT DEFAULT 'local'"],
+  ['password_reset_tokens', 'code_hash', 'TEXT'],
 ];
 for (const [table, column, definition] of ADDED_COLUMNS) {
   const present = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);

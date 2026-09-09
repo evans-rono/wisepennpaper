@@ -40,6 +40,13 @@ loginForm.addEventListener('submit', async (e) => {
   enterDashboard(res.user);
 });
 
+$('#forgotPassword').addEventListener('click', async () => {
+  const email = loginForm.email.value.trim();
+  if (!email) return setStatus(loginForm, 'Enter your email address first.', false);
+  try { await postJson('/api/auth/forgot-password', { email }); setStatus(loginForm, 'If the account exists, an email with a reset link and six-digit verification code has been sent.'); }
+  catch (err) { setStatus(loginForm, err.message, false); }
+});
+
 twoFactorForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!twoFactorForm.reportValidity()) return;

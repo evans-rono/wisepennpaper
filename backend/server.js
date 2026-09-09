@@ -1,6 +1,6 @@
-import 'dotenv/config'; import path from 'node:path'; import fs from 'node:fs'; import crypto from 'node:crypto'; import express from 'express'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import session from 'express-session'; import cookieParser from 'cookie-parser'; import multer from 'multer'; import sanitizeHtml from 'sanitize-html'; import nodemailer from 'nodemailer'; import slugify from 'slugify'; import { z } from 'zod'; import db from './db.js'; import { renderHome, renderService, renderNotFound, renderThanks, renderAdmin, serviceBySlug, serviceSlugs, baseUrl } from './render.js'; import { hashPassword, verifyPassword, needsRehash, assessPassword, isBreached, MIN_LENGTH, MAX_LENGTH } from './password.js'; import { SqliteSessionStore, lockedFor, recordFailure, clearFailures, retryMessage } from './store.js'; import { createCsrf, verifyUploads, safeFileName } from './security.js'; import { generateSecret, generateCode, verifyCode, otpauthUri, formatSecret, generateRecoveryCodes, hashRecoveryCode, consumeRecoveryCode } from './totp.js'; import { toSvg } from './qr.js'; import { googleEnabled, authorisationUrl, exchangeCode, verifyIdToken, refuseReason } from './google.js'; import { normaliseEmail, normalisePhone, parseClientDateTime, isPastCalendarDate } from './validation.js';
+import 'dotenv/config'; import path from 'node:path'; import fs from 'node:fs'; import crypto from 'node:crypto'; import express from 'express'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import session from 'express-session'; import cookieParser from 'cookie-parser'; import multer from 'multer'; import sanitizeHtml from 'sanitize-html'; import slugify from 'slugify'; import { z } from 'zod'; import db from './db.js'; import { renderHome, renderService, renderNotFound, renderThanks, renderAdmin, serviceBySlug, serviceSlugs, baseUrl } from './render.js'; import { hashPassword, verifyPassword, needsRehash, assessPassword, isBreached, MIN_LENGTH, MAX_LENGTH } from './password.js'; import { SqliteSessionStore, lockedFor, recordFailure, clearFailures, retryMessage } from './store.js'; import { createCsrf, verifyUploads, safeFileName } from './security.js'; import { scanAndRemove } from './malware.js'; import { downloadUpload } from './storage.js'; import { sendMail, sendPasswordReset, sendSignInAlert } from './mailer.js'; import { generateSecret, generateCode, verifyCode, otpauthUri, formatSecret, generateRecoveryCodes, hashRecoveryCode, consumeRecoveryCode } from './totp.js'; import { toSvg } from './qr.js'; import { googleEnabled, authorisationUrl, exchangeCode, verifyIdToken, refuseReason } from './google.js'; import { normaliseEmail, normalisePhone, parseClientDateTime, isPastCalendarDate } from './validation.js';
 const app=express(), root=path.resolve('.'), uploads=path.join(root,'uploads'); fs.mkdirSync(uploads,{recursive:true});
-if(process.env.NODE_ENV==='production'){const missing=['SESSION_SECRET'].filter(k=>!process.env[k]||process.env[k].length<32); if(missing.length){console.error(`Refusing to start: ${missing.join(', ')} must be set to at least 32 characters in production.`); process.exit(1);}}
+if(process.env.NODE_ENV==='production'){const missing=['SESSION_SECRET'].filter(k=>!process.env[k]||process.env[k].length<32); if(process.env.MALWARE_SCAN==='off')missing.push('MALWARE_SCAN'); if(process.env.STORAGE_DRIVER&&process.env.STORAGE_DRIVER!=='local')missing.push(...['S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY'].filter(k=>!process.env[k])); if(missing.length){console.error(`Refusing to start: ${missing.join(', ')} must be configured in production.`); process.exit(1);}}
 const sessionSecret=process.env.SESSION_SECRET||crypto.randomBytes(32).toString('hex'); if(!process.env.SESSION_SECRET)console.warn('SESSION_SECRET is not set. Using a random development secret; sessions will not survive a restart.');
 app.disable('x-powered-by');
 // Number of proxies in front of the app. req.ip (and therefore rate limiting
@@ -48,7 +48,7 @@ app.use(session({name:'wpnp.sid',secret:sessionSecret,resave:false,saveUninitial
 // stops targeted brute-force; these are the blunt outer guard.
 const signedIn=req=>!!req.session?.user;
 app.use('/api',rateLimit({windowMs:60_000,limit:Number(process.env.API_RATE_LIMIT)||600,skip:signedIn,standardHeaders:'draft-7',legacyHeaders:false}));
-const CREDENTIAL_ROUTES=new Set(['/api/auth/login','/api/auth/register','/api/auth/password']);
+const CREDENTIAL_ROUTES=new Set(['/api/auth/login','/api/auth/register','/api/auth/password','/api/auth/forgot-password','/api/auth/reset-password']);
 const credentialLimiter=rateLimit({windowMs:15*60_000,limit:Number(process.env.AUTH_RATE_LIMIT)||50,skipSuccessfulRequests:true,standardHeaders:'draft-7',legacyHeaders:false});
 app.use((req,res,next)=>CREDENTIAL_ROUTES.has(req.path)?credentialLimiter(req,res,next):next());
 // Credentials and session state must never sit in a shared or browser cache.
@@ -73,7 +73,16 @@ app.use(csrf.issue);
 // itself, after the upload middleware.
 app.use((req,res,next)=>(req.method==='POST'&&req.path==='/api/quotes')?next():csrf.verify(req,res,next));
 const clean=v=>sanitizeHtml(String(v??''),{allowedTags:[],allowedAttributes:{}}).trim(); const ref=p=>`${p}-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; const audit=(req,a,e,id)=>db.prepare('INSERT INTO audit_logs(user_id,action,entity,entity_id,ip) VALUES(?,?,?,?,?)').run(req.session.user?.id||null,a,e,String(id||''),req.ip);
-const notify=async(subject,text)=>{if(!process.env.SMTP_HOST)return; const t=nodemailer.createTransport({host:process.env.SMTP_HOST,port:+process.env.SMTP_PORT||587,secure:false,auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}}); await t.sendMail({from:process.env.MAIL_FROM,to:process.env.ALERT_EMAIL,subject,text});};
+const notify=async(subject,text)=>{if(!process.env.ALERT_EMAIL)return; await sendMail({to:process.env.ALERT_EMAIL,subject,text});};
+const hashResetToken=token=>crypto.createHash('sha256').update(token).digest('hex');
+const hashResetCode=code=>crypto.createHash('sha256').update(String(code)).digest('hex');
+const loginFingerprint=req=>crypto.createHash('sha256').update(`${req.get('user-agent')||''}|${req.ip}`).digest('hex');
+const notifyLogin=async(req,user)=>{
+  const fingerprint=loginFingerprint(req); const existing=db.prepare('SELECT * FROM login_devices WHERE user_id=? AND fingerprint=?').get(user.id,fingerprint);
+  const priorIp=db.prepare('SELECT ip FROM login_devices WHERE user_id=? ORDER BY last_seen_at DESC LIMIT 1').get(user.id)?.ip;
+  db.prepare('INSERT INTO login_devices(user_id,fingerprint,ip,user_agent) VALUES(?,?,?,?) ON CONFLICT(user_id,fingerprint) DO UPDATE SET ip=excluded.ip,user_agent=excluded.user_agent,last_seen_at=CURRENT_TIMESTAMP').run(user.id,fingerprint,req.ip,req.get('user-agent')||'');
+  if(!existing||priorIp!==req.ip) await sendSignInAlert({to:user.email,name:user.name,ip:req.ip,userAgent:req.get('user-agent'),time:new Date().toISOString()});
+};
 const STAFF_ROLES=['super_admin','admin','staff'];
 // Roles that may not operate without a second factor. These accounts can read
 // every client record, so the requirement is not optional for them.
@@ -102,6 +111,7 @@ const storage=multer.diskStorage({destination:uploads,filename:(req,file,cb)=>cb
 // disk. It is not the security boundary -- verifyUploads is, because a client
 // can put any Content-Type it likes on any bytes.
 const upload=multer({storage,limits:{fileSize:15*1024*1024,files:5,fields:40},fileFilter:(r,f,cb)=>cb(null,allowed.has(f.mimetype))});
+const scanUploads=(req,res,next)=>Promise.all((req.files||[]).map(scanAndRemove)).then(()=>next(),next);
 app.use((req,res,next)=>{
   if(req.method!=='POST'||req.path!=='/api/quotes'||!req.is('multipart/form-data'))return next();
   upload.array('files',5)(req,res,(err)=>{
@@ -124,13 +134,50 @@ const failHtml=(req,res,message)=>{req.session.flash={heading:'We could not send
 // planted before sign-in cannot be reused afterwards.
 const publicUser=(u,startedAt=new Date().toISOString())=>({id:u.id,name:u.name,email:u.email,phone:u.phone,role:u.role,startedAt,
   twoFactor:!!u.totp_enabled,mustEnrol:mustEnrol(u)});
-const startSession=(req,res,user,status=200,startedAt)=>req.session.regenerate(err=>{if(err)return res.status(500).json({error:'Could not start session'}); req.session.user=publicUser(user,startedAt); db.prepare('UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').run(user.id); res.status(status).json({ok:true,user:req.session.user});});
+const startSession=(req,res,user,status=200,startedAt)=>req.session.regenerate(err=>{if(err)return res.status(500).json({error:'Could not start session'}); req.session.user=publicUser(user,startedAt); db.prepare('UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').run(user.id); notifyLogin(req,user).catch(e=>console.error('sign-in alert failed',e)); res.status(status).json({ok:true,user:req.session.user});});
 // Length, screening and the optional breach lookup, in that order.
 const checkPassword=async(password,context)=>{const verdict=assessPassword(password,context); if(!verdict.ok)return verdict.problem; if(await isBreached(password))return 'This password has appeared in a known data breach. Please choose a different one.'; return null;};
 const requestEmail=(value)=>normaliseEmail(value);
 const requestPhone=(value,country)=>{const raw=String(value??''); const [embeddedCountry,number]=raw.includes(':')?raw.split(/:(.*)/s):[country,raw]; return normalisePhone(number,embeddedCountry||'KE');};
 
 app.post('/api/auth/register',async(req,res)=>{try{const d=z.object({name:z.string().trim().min(2),email:z.string(),phone:z.string().min(1),password:z.string().min(MIN_LENGTH).max(MAX_LENGTH)}).parse(req.body); const email=requestEmail(d.email); if(!email)return res.status(400).json({error:'Enter a valid email address.',field:'email'}); const phone=requestPhone(d.phone,req.body.phone_country); if(!phone)return res.status(400).json({error:'Enter a valid phone number for the selected country.',field:'phone'}); const problem=await checkPassword(d.password,{email,name:d.name}); if(problem)return res.status(400).json({error:problem,field:'password'}); const info=db.prepare('INSERT INTO users(name,email,phone,password_hash,role) VALUES(?,?,?,?,?)').run(clean(d.name),email,phone,await hashPassword(d.password),'client'); audit(req,'register','user',info.lastInsertRowid); startSession(req,res,{id:info.lastInsertRowid,name:clean(d.name),email,phone,role:'client'},201);}catch(e){if(e.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'Email is already registered',field:'email'}); res.status(400).json({error:`Check the registration details. Passwords need at least ${MIN_LENGTH} characters.`});}});
+
+app.post('/api/auth/forgot-password',async(req,res)=>{
+  const email=requestEmail(req.body.email); const user=email?db.prepare('SELECT id,name,email,is_active FROM users WHERE email=?').get(email):null;
+  if(user?.is_active!==0){
+    const token=crypto.randomBytes(32).toString('base64url');
+    const code=String(crypto.randomInt(0,1_000_000)).padStart(6,'0');
+    const ttl=Math.max(Number(process.env.PASSWORD_RESET_TTL_MINUTES)||30,5);
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id=? OR expires_at<?').run(user?.id||0,new Date().toISOString());
+    if(user){
+      db.prepare('INSERT INTO password_reset_tokens(user_id,token_hash,code_hash,expires_at) VALUES(?,?,?,?)').run(user.id,hashResetToken(token),hashResetCode(code),new Date(Date.now()+ttl*60_000).toISOString());
+      const url=`${baseUrl(req)}/reset-password?token=${encodeURIComponent(token)}`;
+      sendPasswordReset({to:user.email,name:user.name,url,code,ttlMinutes:ttl}).catch(e=>console.error('password reset email failed',e));
+      audit(req,'password_reset_requested','user',user.id);
+    }
+  }
+  res.json({ok:true,message:'If that email is registered, a password reset link will arrive shortly.'});
+});
+
+app.post('/api/auth/reset-password',async(req,res)=>{
+  const token=String(req.body.token||''); const row=token?db.prepare('SELECT t.*,u.email,u.name,u.is_active FROM password_reset_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.used_at IS NULL').get(hashResetToken(token)):null;
+  if(!row||row.is_active===0||new Date(row.expires_at).getTime()<=Date.now())return res.status(400).json({error:'That reset link is invalid or has expired.'});
+  const code=String(req.body.code||'');
+  const expectedCodeHash=Buffer.from(row.code_hash||'');
+  const suppliedCodeHash=Buffer.from(hashResetCode(code));
+  if(!/^\d{6}$/.test(code)||expectedCodeHash.length!==suppliedCodeHash.length||!crypto.timingSafeEqual(suppliedCodeHash,expectedCodeHash))return res.status(400).json({error:'Enter the six-digit verification code sent to your email.',field:'code'});
+  const next=String(req.body.new_password||'');
+  if(next.length<MIN_LENGTH||next.length>MAX_LENGTH)return res.status(400).json({error:`Use between ${MIN_LENGTH} and ${MAX_LENGTH} characters.`,field:'new_password'});
+  const problem=await checkPassword(next,{email:row.email,name:row.name}); if(problem)return res.status(400).json({error:problem,field:'new_password'});
+  const cutoff=new Date().toISOString(); const passwordHash=await hashPassword(next);
+  db.transaction(()=>{
+    db.prepare('UPDATE users SET password_hash=?,sessions_valid_from=? WHERE id=?').run(passwordHash,cutoff,row.user_id);
+    db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE id=?').run(row.id);
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id=? AND id<>?').run(row.user_id,row.id);
+  })();
+  audit(req,'password_reset_completed','user',row.user_id);
+  res.json({ok:true});
+});
 
 app.post('/api/auth/login',async(req,res)=>{const email=String(req.body.email||'').toLowerCase().trim();
 // Escalating backoff is keyed to the account, not the address: the IP limiter
@@ -246,6 +293,7 @@ app.get('/api/auth/google/callback',async(req,res)=>{
   req.session.regenerate(err=>{
     if(err)return fail('Could not start a session.');
     req.session.user=publicUser(user);
+    notifyLogin(req,user).catch(e=>console.error('sign-in alert failed',e));
     req.session.save(()=>res.redirect(pending.returnTo));
   });});
 
@@ -610,7 +658,7 @@ app.post('/api/client/projects/:id/messages',auth('client'),(req,res)=>{
   audit(req,'message_sent','project',project.id);
   res.status(201).json({ok:true,message:db.prepare('SELECT m.*,u.name sender FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?').get(info.lastInsertRowid)});
 });
-app.get('/api/files/:id',auth(),(req,res)=>{const f=db.prepare('SELECT f.*,p.client_id,q.user_id quote_user,q.email quote_email FROM files f LEFT JOIN projects p ON p.id=f.project_id LEFT JOIN quote_requests q ON q.id=f.quote_id WHERE f.id=?').get(req.params.id); if(!f)return res.status(404).json({error:'File not found'}); const u=req.session.user, staff=['super_admin','admin','staff'].includes(u.role), mine=f.uploaded_by===u.id, owns=mine||f.client_id===u.id||f.quote_user===u.id||f.quote_email===u.email; const gate=f.project_id?(mine||!!f.approved):true; if(!staff&&!(owns&&gate))return res.status(403).json({error:'Not authorised'}); const abs=path.join(uploads,path.basename(f.stored_name)); if(!fs.existsSync(abs))return res.status(404).json({error:'File not found'}); audit(req,'download','file',f.id); res.download(abs,f.original_name);});
+app.get('/api/files/:id',auth(),async(req,res)=>{const f=db.prepare('SELECT f.*,p.client_id,q.user_id quote_user,q.email quote_email FROM files f LEFT JOIN projects p ON p.id=f.project_id LEFT JOIN quote_requests q ON q.id=f.quote_id WHERE f.id=?').get(req.params.id); if(!f)return res.status(404).json({error:'File not found'}); const u=req.session.user, staff=['super_admin','admin','staff'].includes(u.role), mine=f.uploaded_by===u.id, owns=mine||f.client_id===u.id||f.quote_user===u.id||f.quote_email===u.email; const gate=f.project_id?(mine||!!f.approved):true; if(!staff&&!(owns&&gate))return res.status(403).json({error:'Not authorised'}); try{const file=await downloadUpload(f.stored_name); audit(req,'download','file',f.id); res.setHeader('Content-Disposition',`attachment; filename="${safeFileName(f.original_name)}"`); if(file.contentType)res.type(file.contentType); if(file.type==='path'){if(!fs.existsSync(file.value))return res.status(404).json({error:'File not found'}); return res.sendFile(path.resolve(file.value));} file.value.pipe(res);}catch(e){res.status(404).json({error:'File not found'});}});
 app.get('/robots.txt',(req,res)=>res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /portal\nDisallow: /thank-you\nSitemap: ${baseUrl(req)}/sitemap.xml`));
 // Fragments like /#services are not separate URLs to a crawler; the service
 // pages below are, so those are what the sitemap now lists.
@@ -619,7 +667,7 @@ app.get('/favicon.ico',(req,res)=>res.redirect(301,'/favicon.svg'));
 app.get('/',(req,res)=>res.type('html').send(renderHome(req)));
 app.get('/services/:slug',(req,res)=>{const s=serviceBySlug(req.params.slug); if(!s)return res.status(404).type('html').send(renderNotFound(req)); res.type('html').send(renderService(req,s));});
 app.get('/thank-you',(req,res)=>{const flash=req.session.flash; delete req.session.flash; if(!flash)return res.redirect(303,'/'); res.type('html').send(renderThanks(req,flash));});
-app.get('/admin',(req,res)=>res.type('html').send(renderAdmin(req))); app.get('/portal',(req,res)=>res.sendFile(path.join(root,'frontend','portal.html')));
+app.get('/admin',(req,res)=>res.type('html').send(renderAdmin(req))); app.get('/portal',(req,res)=>res.sendFile(path.join(root,'frontend','portal.html'))); app.get('/reset-password',(req,res)=>res.sendFile(path.join(root,'frontend','reset.html')));
 // Anything unmatched is genuinely missing. This used to return the homepage
 // with a 200, which makes every typo a soft 404 that crawlers happily index.
 app.use((req,res)=>req.path.startsWith('/api/')?res.status(404).json({error:'Not found'}):res.status(404).type('html').send(renderNotFound(req)));

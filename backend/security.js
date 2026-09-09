@@ -7,6 +7,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { scanAndRemove } from './malware.js';
+import { persistUpload, removeUpload } from './storage.js';
 
 /* ------------------------------------------------------------------ CSRF */
 
@@ -121,19 +123,30 @@ export function verifyUploads(req, res, next) {
   if (!files.length) return next();
 
   (async () => {
-    for (const file of files) {
-      const type = await detectFileType(file.path);
-      if (!type) {
-        throw Object.assign(new Error('One of the files is not a valid PDF, Word, JPG or PNG document.'),
-          { status: 400, expose: true });
+    const persisted = [];
+    try {
+      for (const file of files) {
+        const type = await detectFileType(file.path);
+        if (!type) {
+          throw Object.assign(new Error('One of the files is not a valid PDF, Word, JPG or PNG document.'),
+            { status: 400, expose: true });
+        }
+        file.mimetype = type.mime; // the bytes, not the header the client sent
+        const target = file.path.replace(/\.[^./\\]*$/, '') + type.ext;
+        if (target !== file.path) {
+          await fs.promises.rename(file.path, target);
+          file.path = target;
+          file.filename = path.basename(target);
+        }
+        await scanAndRemove(file);
+        const stored = await persistUpload(file);
+        file.filename = stored.storedName;
+        file.storageDriver = stored.driver;
+        persisted.push(stored.storedName);
       }
-      file.mimetype = type.mime; // the bytes, not the header the client sent
-      const target = file.path.replace(/\.[^./\\]*$/, '') + type.ext;
-      if (target !== file.path) {
-        await fs.promises.rename(file.path, target);
-        file.path = target;
-        file.filename = path.basename(target);
-      }
+    } catch (error) {
+      await Promise.allSettled(persisted.map((name) => removeUpload(name)));
+      throw error;
     }
   })().then(next, (err) => {
     for (const file of files) fs.rmSync(file.path, { force: true });

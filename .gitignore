@@ -5,3 +5,5 @@ uploads/*
 !uploads/.gitkeep
 npm-debug.log*
 .test-databases/
+wise-pen.db-shm
+wise-pen.db-wal

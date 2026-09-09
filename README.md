@@ -78,9 +78,11 @@ The seed command prints the configured admin account. Change the temporary passw
 8. Tune `API_RATE_LIMIT` and `AUTH_RATE_LIMIT` for your traffic. The defaults are deliberately far above human usage and exist only to blunt automated abuse.
 9. Use HTTPS and a reverse proxy. Set `NODE_ENV=production`, `BASE_URL`, and a long random `SESSION_SECRET`.
 10. Sessions are stored in SQLite and survive restarts. For several instances, point `DB_PATH` at shared storage or move the store to Redis.
-11. Store uploads in private object storage with signed downloads and malware scanning. The local disk implementation is intended for a single-server deployment.
-12. Move SQLite to PostgreSQL for high concurrency or multi-instance hosting. Keep parameterised queries and migrations.
-13. Add a transactional email provider, backups, uptime monitoring, central logs and dependency vulnerability scanning.
+11. Configure `MALWARE_SCAN=clamav` (the production Docker image includes ClamAV) and keep its signature database current. Uploads are scanned after signature verification and before they are moved to permanent local or object storage.
+12. For object storage, set `STORAGE_DRIVER=s3` plus `S3_BUCKET`, credentials, and an optional `S3_ENDPOINT` for R2 or another S3-compatible provider. Buckets must be private; downloads remain authorized by the application.
+13. Configure SMTP for password recovery and new-device/IP sign-in alerts. Reset tokens are random, stored only as SHA-256 hashes, single-use, and expire after `PASSWORD_RESET_TTL_MINUTES`.
+14. Move SQLite to PostgreSQL for high concurrency or multi-instance hosting. New persistence code uses `backend/repository.js`; keep parameterised queries and add PostgreSQL migrations before switching `DB_DIALECT`.
+15. Add backups, uptime monitoring, central logs and dependency vulnerability scanning. CI runs `npm audit --audit-level=critical` and fails on critical advisories.
 14. Verify company address, telephone, email, hours, real statistics, legal pages, privacy notice, cookie requirements and Google Maps consent before launch.
 15. Run accessibility, browser, responsive, Core Web Vitals and penetration testing against the deployed environment.
 
@@ -95,7 +97,9 @@ The seed command prints the configured admin account. Change the temporary passw
 - Recovery codes are shown once and stored only as hashes. If a member of staff loses both their authenticator and their codes, an administrator has to clear `totp_enabled` and `totp_secret` for that row directly; there is no self-service reset.
 - `backend/qr.js` is a byte-mode, error-correction-level-M QR encoder covering versions 1-10. It was checked module-for-module against the `qrcode` package across 660 generated matrices before that package was removed.
 - Signature checking is not malware scanning. It establishes that a file is the format it claims to be; it does not establish that the file is safe. Scanning on ingest is still required before these documents are opened by staff.
-- There is no forgot-password flow, and no sign-in alert email. Both need working SMTP, which is not configured; they were left out rather than half-built. An administrator can clear a colleague's second factor from the Team screen, but cannot reset a password from the interface.
+- Password recovery is available at `/api/auth/forgot-password` and `/reset-password`; configure SMTP so the reset link and six-digit verification code can be delivered. The code is generated securely, stored only as a hash, expires with the reset link, and is single-use.
+- Upload storage is selected through `STORAGE_DRIVER`. Local storage keeps the existing single-server behavior; the S3-compatible implementation works with AWS S3, Cloudflare R2 and compatible gateways. ClamAV is fail-closed when enabled.
+- `backend/repository.js` is the portability boundary for new database work. The current application schema and session store remain SQLite-backed until a PostgreSQL migration is introduced.
 - `seed.js` sets up structure — an administrator account, categories, the service catalogue — not content. Everything the public site shows is editable from the dashboard, and editing `seed.js` after the first run has no effect, because it inserts only what is missing.
 - Password hashes written before the pre-hash change still verify, and are upgraded to the current scheme the next time that user signs in successfully.
 

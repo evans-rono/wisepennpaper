@@ -125,6 +125,13 @@ for (const id of ['login', 'register']) {
   });
 }
 
+el('#forgotPassword').addEventListener('click', async () => {
+  const form = el('#login');
+  if (!form.email.value.trim()) return setStatus(form, 'Enter your email address first.', false);
+  try { await postJson('/api/auth/forgot-password', { email: form.email.value.trim() }); setStatus(form, 'If the account exists, an email with a reset link and six-digit verification code has been sent.'); }
+  catch (err) { setStatus(form, err.message, false); }
+});
+
 el('#profileForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
