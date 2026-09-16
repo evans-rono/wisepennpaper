@@ -26,9 +26,9 @@
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="nav" id="top">
-  <a class="brand" href="#top" aria-label="Wise Pen home"><span aria-hidden="true">W</span><b>The Wise Pen<br><small>N’ Paper</small></b></a>
+  <a class="brand" href="#top" aria-label="Wise Pen home"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="/logo.svg#logo"/></svg></a>
   <nav id="navlinks" aria-label="Main">
-    <a href="#about">About</a><a href="#services">Services</a><a href="#process">Process</a>
+    <a href="#about">About</a><a href="#services">Services</a>
     <a href="#portfolio">Portfolio</a><a href="#testimonials">Testimonials</a><a href="#resources">Resources</a>
     <a href="#faqs">FAQs</a><a href="#contact">Contact</a>
     <button type="button" class="search-open">Search</button>
@@ -86,10 +86,7 @@
     <p>Choose focused support or an end-to-end pathway. Every service can be tailored to the manuscript, audience, budget and intended outcome.</p>
   </header>
   <div id="serviceGrid" class="cards"><!--ssr:services--><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><!--/ssr:services--></div>
-</section>
-
-<section id="process" class="section process">
-  <header class="section-head"><div><p class="eyebrow">How it works</p><h2>A clear path from first idea to finished work.</h2></div></header>
+  <h3 class="sub-head">How it works</h3>
   <div class="steps">
     <article><span>01</span><h3>Submit Your Idea</h3><p>Share your goals, draft and intended audience through our secure project form.</p></article>
     <article><span>02</span><h3>Consultation &amp; Assessment</h3><p>We review the project, clarify priorities and recommend the right route.</p></article>
@@ -123,6 +120,8 @@
     <article><i aria-hidden="true">♡</i><h3>Client-centred</h3><p>Clear communication and meaningful approvals throughout.</p></article>
     <article><i aria-hidden="true">◷</i><h3>Reliable delivery</h3><p>Visible milestones, accountable ownership and practical schedules.</p></article>
   </div>
+  <h3 class="sub-head">Who we support</h3>
+  <div class="pill-grid"><span>Authors &amp; Writers</span><span>Businesses</span><span>NGOs</span><span>Educational Institutions</span><span>Government &amp; Public Sector</span><span>Healthcare Professionals</span><span>Corporate Organisations</span><span>Financial Institutions</span><span>Creative Professionals</span></div>
 </section>
 
 <section id="testimonials" class="section tinted">
@@ -130,20 +129,17 @@
   <div id="testimonialGrid" class="testimonials"><!--ssr:testimonials--><!--/ssr:testimonials--></div>
 </section>
 
-<section class="section clients">
-  <p class="eyebrow">Who we support</p>
-  <h2>Publishing and content solutions for many kinds of work.</h2>
-  <div class="pill-grid"><span>Authors &amp; Writers</span><span>Businesses</span><span>NGOs</span><span>Educational Institutions</span><span>Government &amp; Public Sector</span><span>Healthcare Professionals</span><span>Corporate Organisations</span><span>Financial Institutions</span><span>Creative Professionals</span></div>
-</section>
-
-<section id="resources" class="section">
-  <header class="section-head"><div><p class="eyebrow">Ideas &amp; resources</p><h2>Useful guidance for better publishing decisions.</h2></div></header>
-  <div id="blogGrid" class="cards"><!--ssr:blog--><!--/ssr:blog--></div>
-</section>
-
-<section id="faqs" class="section tinted">
-  <header class="section-head"><div><p class="eyebrow">Frequently asked questions</p><h2>Answers before you begin.</h2></div></header>
-  <div id="faqList" class="faqs"><!--ssr:faqs--><!--/ssr:faqs--></div>
+<section class="section learn">
+  <div id="faqs">
+    <p class="eyebrow">Frequently asked questions</p>
+    <h2>Answers before you begin.</h2>
+    <div id="faqList" class="faqs"><!--ssr:faqs--><!--/ssr:faqs--></div>
+  </div>
+  <div id="resources">
+    <p class="eyebrow">Ideas &amp; resources</p>
+    <h2>Useful publishing guidance.</h2>
+    <div id="blogGrid" class="cards"><!--ssr:blog--><!--/ssr:blog--></div>
+  </div>
 </section>
 
 <section id="quote" class="section quote-wrap">
@@ -152,6 +148,23 @@
     <h2>Tell us what you want to create.</h2>
     <p>Complete the guided form and attach any available manuscript or reference material. You will receive a unique project reference immediately.</p>
     <ol class="mini-process"><li class="on" aria-current="step">Your details</li><li>Project brief</li><li>Files &amp; budget</li></ol>
+    <details class="consult-inline">
+      <summary>Prefer to talk first? Book a consultation</summary>
+      <p>Request a focused consultation about your manuscript, publication or content project.</p>
+      <form id="appointmentForm" class="compact-form" method="post" action="/api/appointments">
+        <!--ssr:csrf--><!--/ssr:csrf-->
+        <label class="sr-only" for="ap-name">Full name</label><input id="ap-name" name="full_name" placeholder="Full name" required minlength="2">
+        <label class="sr-only" for="ap-email">Email</label><input id="ap-email" type="email" name="email" placeholder="Email" required>
+        <label class="sr-only" for="ap-phone">Phone</label><select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input id="ap-phone" data-phone-number="phone" name="phone" placeholder="Phone" required minlength="7">
+        <label class="sr-only" for="ap-type">Consultation type</label>
+        <select id="ap-type" name="consultation_type" required><option value="">Consultation type</option><option>Publishing assessment</option><option>Editorial consultation</option><option>Corporate publication brief</option><option>Design and production</option></select>
+        <label class="sr-only" for="ap-date">Preferred date</label><input id="ap-date" type="date" name="preferred_date" data-future-date required><input type="hidden" name="timezone_offset" data-timezone-offset>
+        <label class="sr-only" for="ap-time">Preferred time</label><input id="ap-time" type="time" name="preferred_time" required>
+        <label class="sr-only" for="ap-info">Project information</label><textarea id="ap-info" name="project_info" placeholder="Briefly describe your project"></textarea>
+        <button class="btn" type="submit">Request consultation</button>
+        <p class="form-status" role="status"></p>
+      </form>
+    </details>
   </div>
   <form id="quoteForm" class="panel" method="post" action="/api/quotes" enctype="multipart/form-data">
     <!--ssr:csrf--><!--/ssr:csrf-->
@@ -193,27 +206,6 @@
   </form>
 </section>
 
-<section class="section consult">
-  <div>
-    <p class="eyebrow">Book a consultation</p>
-    <h2>Prefer to talk first?</h2>
-    <p>Request a focused consultation about your manuscript, publication or content project.</p>
-  </div>
-  <form id="appointmentForm" class="compact-form" method="post" action="/api/appointments">
-    <!--ssr:csrf--><!--/ssr:csrf-->
-    <label class="sr-only" for="ap-name">Full name</label><input id="ap-name" name="full_name" placeholder="Full name" required minlength="2">
-    <label class="sr-only" for="ap-email">Email</label><input id="ap-email" type="email" name="email" placeholder="Email" required>
-    <label class="sr-only" for="ap-phone">Phone</label><select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input id="ap-phone" data-phone-number="phone" name="phone" placeholder="Phone" required minlength="7">
-    <label class="sr-only" for="ap-type">Consultation type</label>
-    <select id="ap-type" name="consultation_type" required><option value="">Consultation type</option><option>Publishing assessment</option><option>Editorial consultation</option><option>Corporate publication brief</option><option>Design and production</option></select>
-    <label class="sr-only" for="ap-date">Preferred date</label><input id="ap-date" type="date" name="preferred_date" data-future-date required><input type="hidden" name="timezone_offset" data-timezone-offset>
-    <label class="sr-only" for="ap-time">Preferred time</label><input id="ap-time" type="time" name="preferred_time" required>
-    <label class="sr-only" for="ap-info">Project information</label><textarea id="ap-info" name="project_info" placeholder="Briefly describe your project"></textarea>
-    <button class="btn" type="submit">Request consultation</button>
-    <p class="form-status" role="status"></p>
-  </form>
-</section>
-
 <section id="contact" class="section contact">
   <div>
     <p class="eyebrow">Contact</p>
@@ -232,17 +224,11 @@
     <p class="form-status" role="status"></p>
   </form>
 </section>
-
-<section class="final-cta">
-  <p class="eyebrow">Your project can begin here</p>
-  <h2>Have a story, idea or publication in mind?</h2>
-  <div class="actions"><a class="btn light" href="#quote">Start Your Project</a><a class="btn outline-light" href="#contact">Talk to Our Team</a></div>
-</section>
 </main>
 
 <footer>
   <div class="footer-intro">
-    <div class="brand footer-brand"><span aria-hidden="true">W</span><b>The Wise Pen<br><small>N’ Paper</small></b></div>
+    <div class="brand footer-brand" role="img" aria-label="The Wise Pen N’ Paper"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="/logo.svg#logo"/></svg></div>
     <p>Professional publishing, content development and creative services for ideas that deserve to travel further.</p>
   </div>
   <div><b>Explore</b><a href="#services">Services</a><a href="#portfolio">Portfolio</a><a href="#resources">Resources</a><a href="#contact">Contact</a></div>

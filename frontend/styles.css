@@ -10,6 +10,55 @@
 [hidden]{display:none!important}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .search-count{font-weight:700;color:var(--ink);margin:0 0 .5rem}
+
+/* Wordmark: one vector symbol in /logo.svg, tinted through currentColor. */
+.brand{color:#2b1624}
+[data-theme=dark] .brand{color:var(--ink)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .brand{color:var(--ink)}}
+.brand .logo{display:block;height:50px;width:auto;aspect-ratio:1330/312}
+
+/* Portfolio band, stats strip and footer follow the theme. They used to stay
+   dark in light mode because their colours were hard-coded. */
+:root{--sect-bg:#efe9dd;--sect-fg:var(--ink);--sect-muted:var(--muted);--sect-strong:var(--ink);--sect-eyebrow:var(--gold-ink);--sect-line:#d8cfbd;--band-bg-t:#e6eee4;--foot-bg:#f3efe6;--foot-small:var(--muted)}
+[data-theme=dark]{--sect-bg:var(--contrast-bg);--sect-fg:var(--contrast-fg);--sect-muted:#b7c4ba;--sect-strong:#fff;--sect-eyebrow:#e8b969;--sect-line:#ffffff2b;--band-bg-t:var(--band-bg);--foot-bg:var(--footer-bg);--foot-small:#819086}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--sect-bg:var(--contrast-bg);--sect-fg:var(--contrast-fg);--sect-muted:#b7c4ba;--sect-strong:#fff;--sect-eyebrow:#e8b969;--sect-line:#ffffff2b;--band-bg-t:var(--band-bg);--foot-bg:var(--footer-bg);--foot-small:#819086}}
+.dark{background:var(--sect-bg);color:var(--sect-fg)}
+.dark p,.dark .muted,.stats .muted,footer .muted,footer p,.stats span{color:var(--sect-muted)}
+.dark .eyebrow,footer .eyebrow{color:var(--sect-eyebrow)}
+.filters button{color:var(--sect-muted);border-color:var(--sect-line)}
+.filters button:not(.active):hover{color:var(--sect-fg)}
+.dark :focus-visible,.stats :focus-visible,footer :focus-visible{outline-color:var(--focus-ring)}
+.stats{background:var(--band-bg-t);color:var(--sect-fg)}
+.stats strong{color:var(--sect-strong)}
+.stats div{border-right-color:var(--sect-line)}
+footer{background:var(--foot-bg);color:var(--sect-fg)}
+footer small{color:var(--foot-small);border-top-color:var(--sect-line)}
+footer .brand .logo{height:58px}
+.brand-tag{font-size:.85rem;color:var(--gold-ink)}
+@media(max-width:560px){.brand .logo{height:38px}}
+
+/* Denser page: merged sections share one block, so trim the vertical rhythm. */
+.section{padding-block:5rem}
+.hero{min-height:0;padding-block:4.5rem}
+.hero-art{height:480px}
+.sub-head{margin:3.5rem 0 1.2rem}
+.why+.sub-head+.pill-grid{justify-content:flex-start}
+.learn{display:grid;grid-template-columns:1.1fr .9fr;gap:5vw;align-items:start}
+.learn h2{font-size:clamp(1.9rem,3vw,2.8rem)}
+.learn .cards{grid-template-columns:1fr}
+.consult-inline{margin-top:2rem;border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:1rem 1.3rem}
+.consult-inline summary{font-weight:800;cursor:pointer;color:var(--accent-ink)}
+.quote-copy .compact-form{grid-template-columns:1fr;border:0;box-shadow:none;padding:0;background:none}
+@media(max-width:1000px){.learn{grid-template-columns:1fr}.hero-art{height:400px}}
+/* Desktops use the full width with a slim gutter. Long paragraphs stay readable
+   through their own ch-based max widths. */
+@media(min-width:1101px){
+  .section,.hero,footer,.stats{padding-inline:5vw}
+  .nav{padding-inline:3vw}
+  /* Standalone pages already cap themselves at 820px; the cap above would
+     subtract from that and leave a one-word-per-line column. */
+  .text-page{padding-inline:0}
+}
 .search-count.err{color:var(--err)}
 .portfolio-empty{grid-column:1/-1}
 
@@ -132,7 +181,6 @@ textarea{resize:vertical}
 .form-grid>* , .compact-form>*{min-width:0}
 .form-grid label:has(select[data-phone-country]),.compact-form label:has(select[data-phone-country]){display:grid;grid-template-columns:minmax(7rem,auto) minmax(0,1fr);gap:.5rem;align-items:center}
 .form-grid label:has(select[data-phone-country]) input,.compact-form label:has(select[data-phone-country]) input{min-width:0}
-
 @media (max-width: 1100px){
   .nav{padding-inline:4vw}
   .section,.hero{padding-inline:6vw}
@@ -173,4 +221,14 @@ textarea{resize:vertical}
 @media (orientation:landscape) and (max-height:520px){
   .hero{padding-block:2.5rem}
   .modal-card{max-height:calc(100dvh - .75rem)}
+}
+
+/* Phone fields in every form: label on top, then country code and number side
+   by side. Placed last so it wins over the per-breakpoint rules above. */
+:is(.form-grid,.compact-form,form) label:has(select[data-phone-country]){display:grid;grid-template-columns:minmax(8.5rem,34%) minmax(0,1fr);column-gap:.5rem;align-items:center}
+:is(.form-grid,.compact-form,form) label:has(select[data-phone-country]) select{grid-column:1;width:100%}
+:is(.form-grid,.compact-form,form) label:has(select[data-phone-country]) input{grid-column:2;min-width:0}
+@media(max-width:480px){
+  :is(.form-grid,.compact-form,form) label:has(select[data-phone-country]){grid-template-columns:1fr}
+  :is(.form-grid,.compact-form,form) label:has(select[data-phone-country]) :is(select,input){grid-column:auto}
 }

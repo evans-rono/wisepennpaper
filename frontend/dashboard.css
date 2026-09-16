@@ -29,6 +29,8 @@
 /* --------------------------------------------------------------- portal */
 
 .portal { max-width: 1100px; margin: auto; padding: 4rem 5vw; }
+/* Sign-in is much shorter than sign-up; don't stretch it to match. */
+#auth .grid { align-items: start; }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 .portal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .progress { height: 10px; background: var(--line); border-radius: 9px; overflow: hidden; }

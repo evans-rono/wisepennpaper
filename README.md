@@ -106,3 +106,33 @@ The seed command prints the configured admin account. Change the temporary passw
 ## Suggested deployment
 
 Use a Node.js host or container platform with persistent storage, HTTPS and environment secrets. Run `npm run seed` once, then `npm start`. For a scaled deployment, migrate the database and uploads as described above.
+
+## Deploying on cPanel
+
+cPanel runs Node applications under Passenger, which supplies `PORT` and fronts
+the app with Apache. `app.listen(process.env.PORT)` and `TRUST_PROXY=1` already
+match that, so no code changes are needed.
+
+1. Upload the project outside `public_html` (for example `/home/<user>/wisepen`).
+   Passenger serves the app itself; `public_html` is not used for its files.
+2. cPanel > **Setup Node.js App** > Create Application:
+   - Node.js version: 22 (the version in `.nvmrc`; ask the host to enable it if
+     the list stops earlier — `better-sqlite3` needs a prebuilt binary or a
+     compiler for the exact version chosen).
+   - Application root: the upload folder. Application URL: the domain.
+   - Application startup file: `backend/server.js`.
+3. Add the environment variables from `.env.example` in that same screen, with
+   `NODE_ENV=production`, the real `BASE_URL`, and a fresh `SESSION_SECRET`.
+4. Run **NPM Install** from the app's page, or over SSH activate the virtualenv
+   the page shows (`source /home/<user>/nodevenv/.../bin/activate`) and run
+   `npm ci --omit=dev`.
+5. Point `DB_PATH` and `UPLOAD_DIR` at writable paths outside `public_html`, and
+   back both up — they hold every account, quote and uploaded file.
+6. Run `npm run seed` once from the activated virtualenv, then **Restart** the
+   app and change the seeded administrator password.
+7. Issue SSL for the domain (cPanel > SSL/TLS Status, AutoSSL). Session and CSRF
+   cookies are secure-only in production, so sign-in fails over plain HTTP.
+
+Redeploying is: upload changed files, run NPM Install if dependencies moved,
+then Restart. Shared hosts often block outbound SMTP to other providers; see the
+mail notes in `.env.example` if Gmail times out.

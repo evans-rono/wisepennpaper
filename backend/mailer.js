@@ -18,7 +18,10 @@ export async function sendMail({ to, subject, text }) {
     if (process.env.NODE_ENV === 'production') throw new Error('SMTP is not configured');
     return false;
   }
-  await smtp.sendMail({ from: process.env.MAIL_FROM, to, subject, text });
+  // Gmail rewrites From to the authenticated mailbox unless the address is a
+  // verified "Send mail as" alias, so fall back to the SMTP account itself.
+  const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+  await smtp.sendMail({ from, to, subject, text });
   return true;
 }
 
