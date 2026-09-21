@@ -298,3 +298,9 @@
    tinted ground and lets the page carry it. */
 .portal .auth-shell { background: none; padding: 0; min-height: 0; }
 .portal .auth-split { width: 100%; margin: 1rem auto 0; }
+
+/* First-frame state for /portal. The server stamps data-portal, so a signed-in
+   visitor never sees the sign-in card flash before the session check returns. */
+.portal-loading { display: none; color: var(--muted); padding: 4rem 0; }
+[data-portal="signed-in"] #auth { display: none !important; }
+[data-portal="signed-in"] #portalLoading { display: block; }

@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/dashboard.css">
 </head>
-<body>
+<body data-portal="signed-out">
 <header class="nav">
   <a class="brand" href="/" aria-label="Wise Pen Client Portal home"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="/logo.svg#logo"/></svg><b class="brand-tag">Client Portal</b></a>
   <span class="nav-actions"><button type="button" class="theme-toggle" id="themeToggle" aria-pressed="false" aria-label="Switch to dark theme"><span class="moon" aria-hidden="true">☾</span><span class="sun" aria-hidden="true">☀</span></button><a href="/">Public website</a></span>
@@ -77,6 +77,8 @@
       </div>
     </div>
   </section>
+
+  <p id="portalLoading" class="portal-loading">Loading your account…</p>
 
   <section id="notice" class="panel notice hidden"></section>
 

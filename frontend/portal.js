@@ -273,7 +273,15 @@ function showRecoveryCodes(codes, heading) {
 }
 
 /* ------------------------------------------------------------------ load */
+// The server-stamped state on <body> decides what paints first; from here on
+// the page has the answer and drives it itself.
+const settle = (state) => {
+  document.body.dataset.portal = state;
+  el('#portalLoading').hidden = true;
+};
+
 function showNotice(html) {
+  settle('signed-in');
   el('#auth').classList.add('hidden');
   el('#portal').classList.add('hidden');
   const notice = el('#notice');
@@ -289,7 +297,7 @@ async function load() {
   } catch (err) {
     console.error(err);
   }
-  if (!user) return; // the sign-in / register forms are already on screen
+  if (!user) return settle('signed-out'); // show the sign-in / register forms
   if (isStaff(user.role)) {
     return showNotice(`<h1>You are signed in as staff</h1>
       <p>The client portal only shows projects belonging to a client account.</p>
@@ -304,6 +312,7 @@ async function load() {
       <p>${esc(err.message)}</p><p><button class="btn" type="button" data-reload>Try again</button></p>`);
   }
 
+  settle('signed-in');
   el('#auth').classList.add('hidden');
   el('#portal').classList.remove('hidden');
   el('#welcome').textContent = user.name ? `Welcome back, ${user.name.split(' ')[0]}` : 'Your account';

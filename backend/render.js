@@ -330,6 +330,16 @@ export function renderAdmin(req) {
   }).replace('data-state="signed-out"', `data-state="${signedIn ? 'signed-in' : 'signed-out'}"`);
 }
 
+// The portal used to be served as a static file, so a signed-in visitor saw the
+// sign-in card until the session lookup came back — a second of the wrong
+// screen. Stamping the state server-side paints the right one on the first
+// frame, exactly as renderAdmin does.
+export function renderPortal(req) {
+  const signedIn = Boolean(req.session?.user);
+  return template('portal.html')
+    .replace('data-portal="signed-out"', `data-portal="${signedIn ? 'signed-in' : 'signed-out'}"`);
+}
+
 export function renderNotFound(req) {
   const main = `<article class="section text-page">
     <p class="eyebrow">Error 404</p>
