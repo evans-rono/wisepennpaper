@@ -47,8 +47,15 @@ ok('policy rejects name-derived',
   assessPassword('Amina-Wanjiru-2026x', { name: 'Amina Wanjiru' }).ok === false);
 ok('policy rejects email-derived',
   assessPassword('jkamau-secret-9912', { email: 'jkamau@example.com' }).ok === false);
-ok('policy accepts a passphrase', assessPassword('quiet lantern harbour method').ok === true,
-  JSON.stringify(assessPassword('quiet lantern harbour method')));
+ok('policy accepts a punctuated passphrase', assessPassword('Quiet-Lantern-Harbour-Method-9!').ok === true,
+  JSON.stringify(assessPassword('Quiet-Lantern-Harbour-Method-9!')));
+// Composition rules, on top of length and the blocklist. Each fixture is
+// missing exactly one rule, so a failure names the rule that broke.
+ok('policy requires a capital', assessPassword('quiet-lantern-harbour-7!').ok === false);
+ok('policy requires a number', assessPassword('Quiet-Lantern-Harbour!').ok === false);
+ok('policy requires a special character', assessPassword('Quiet lantern harbour 7').ok === false);
+ok('a space alone is not a special character', assessPassword('Quiet lantern harbour 77').ok === false);
+ok('staff need 16 characters', assessPassword('Short-Pass-12', { role: 'admin' }).ok === false);
 ok('policy accepts a strong mixed password', assessPassword('Tr0mbone-Vault-91xz').ok === true);
 ok('policy rejects over-long input', assessPassword('a1B!'.repeat(80)).ok === false);
 ok('score rises with length',
@@ -96,7 +103,7 @@ ok('empty stored hash never matches', (await verifyPassword('anything', null)) =
 
 /* ------------------------------------- session regeneration + happy path */
 
-const goodPassword = 'quiet lantern harbour method';
+const goodPassword = 'Quiet-Lantern-Harbour-Method-9!';
 const userEmail = email();
 let userSid;
 {
@@ -147,7 +154,7 @@ let userSid;
 
 {
   const target = email();
-  await register(agent(), { email: target, password: 'copper vessel morning ledger' });
+  await register(agent(), { email: target, password: 'Copper-Vessel-Morning-Ledger-7!' });
   let locked = null;
   for (let i = 0; i < 8 && !locked; i++) {
     const r = await login(agent(), { email: target, password: 'wrong-guess-number-' + i });
@@ -156,7 +163,7 @@ let userSid;
   ok('repeated wrong guesses lock the account', !!locked, 'never locked');
   ok('lock message tells the user when to retry', /try again in/i.test(locked?.body?.error || ''), locked?.body?.error);
   ok('lock applies to the correct password too',
-    (await login(agent(), { email: target, password: 'copper vessel morning ledger' })).status === 429);
+    (await login(agent(), { email: target, password: 'Copper-Vessel-Morning-Ledger-7!' })).status === 429);
   // A different account is unaffected by the first one's lockout.
   ok('other accounts are not affected',
     (await login(agent(), { email: userEmail, password: goodPassword })).status === 200);
@@ -173,7 +180,7 @@ let userSid;
   };
 
   ok('rejects a wrong current password',
-    (await change({ current_password: 'nope-nope-nope', new_password: 'copper vessel morning ledger' })).status === 401);
+    (await change({ current_password: 'nope-nope-nope', new_password: 'Copper-Vessel-Morning-Ledger-7!' })).status === 401);
 
   const weak = await change({ current_password: goodPassword, new_password: 'password1234' });
   ok('rejects a weak new password', weak.status === 400, JSON.stringify(weak.body));
@@ -182,7 +189,7 @@ let userSid;
   const same = await change({ current_password: goodPassword, new_password: goodPassword });
   ok('rejects reusing the current password', same.status === 400, JSON.stringify(same.body));
 
-  const newPassword = 'copper vessel morning ledger';
+  const newPassword = 'Copper-Vessel-Morning-Ledger-7!';
   const done = await change({ current_password: goodPassword, new_password: newPassword });
   ok('accepts a good new password', done.status === 200, JSON.stringify(done.body));
   const rotated = done.headers['set-cookie']?.find((c) => c.startsWith('wpnp.sid'));
@@ -200,7 +207,7 @@ let userSid;
   const anon = agent();
   const t = await token(anon);
   const res = await anon.post('/api/auth/password').set('CSRF-Token', t)
-    .send({ current_password: 'x', new_password: 'copper vessel morning ledger' });
+    .send({ current_password: 'x', new_password: 'Copper-Vessel-Morning-Ledger-7!' });
   ok('change password requires a session', res.status === 401, String(res.status));
 }
 
@@ -208,7 +215,7 @@ let userSid;
 
 {
   const e = email();
-  const pw = 'brass compass evening tide';
+  const pw = 'Brass-Compass-Evening-Tide-4!';
   db.prepare('INSERT INTO users(name,email,phone,password_hash,role) VALUES(?,?,?,?,?)')
     .run('Legacy User', e, '0700000000', bcrypt.hashSync(pw, 10), 'client');
   const res = await login(agent(), { email: e, password: pw });
@@ -223,7 +230,7 @@ let userSid;
 
 {
   const a = agent();
-  await login(a, { email: userEmail, password: 'copper vessel morning ledger' });
+  await login(a, { email: userEmail, password: 'Copper-Vessel-Morning-Ledger-7!' });
   ok('session is live before logout', (await a.get('/api/session')).body.user !== null);
   const lt = await token(a);
   await a.post('/api/auth/logout').set('CSRF-Token', lt);

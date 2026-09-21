@@ -14,7 +14,7 @@ const patch = async (a, u, b) => { const t = (await a.get('/api/csrf')).body.csr
 const del = async (a, u) => { const t = (await a.get('/api/csrf')).body.csrfToken; return a.delete(u).set('CSRF-Token', t); };
 
 const su = agent();
-await post(su, '/api/auth/login', { email: 'admin@wisepennpaper.co.ke', password: 'TestPass-12345!' });
+await post(su, '/api/auth/login', { email: 'admin@wisepennpaper.co.ke', password: 'TestPass-12345!x' });
 const setup = await post(su, '/api/auth/2fa/setup', {});
 await post(su, '/api/auth/2fa/enable', { code: generateCode(setup.body.secret.replace(/\s/g, '')) });
 
@@ -100,9 +100,9 @@ ok('anonymous cannot read content', (await anon.get('/api/admin/content/portfoli
 ok('anonymous cannot write settings', (await patch(anon, '/api/admin/settings', { phone: 'x' })).status === 401);
 
 const staffEmail = `st${Date.now()}@example.com`;
-await post(su, '/api/admin/users', { name: 'Plain Staff', email: staffEmail, role: 'staff', password: 'copper vessel morning ledger' });
+await post(su, '/api/admin/users', { name: 'Plain Staff', email: staffEmail, role: 'staff', password: 'Copper-Vessel-Morning-Ledger-7!' });
 const st = agent();
-await post(st, '/api/auth/login', { email: staffEmail, password: 'copper vessel morning ledger' });
+await post(st, '/api/auth/login', { email: staffEmail, password: 'Copper-Vessel-Morning-Ledger-7!' });
 ok('plain staff can read content', (await st.get('/api/admin/content/portfolio')).status === 200);
 ok('plain staff cannot create content',
   (await post(st, '/api/admin/content/faqs', { question: 'Sneaky question here?', answer: 'Should not be allowed through.' })).status === 403);

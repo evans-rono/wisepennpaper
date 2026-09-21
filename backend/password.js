@@ -4,9 +4,11 @@
 // about on their own. Brute-force throttling lives in store.js, because it has
 // to survive a restart and this module is deliberately free of database access.
 //
-// The guidance here follows NIST SP 800-63B: length and screening against
-// known-bad choices do the real work; arbitrary composition rules ("must
-// contain a symbol") do not.
+// Length and screening against known-bad choices (blocklist, breach corpus,
+// personal data) do most of the work here, as NIST SP 800-63B recommends.
+// Composition rules — a number, a capital and a symbol — are applied on top at
+// the site owner's request; they are checked after length so the message a
+// person sees is the most useful one.
 
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
@@ -14,6 +16,11 @@ import bcrypt from 'bcryptjs';
 const COST = 12;
 
 export const MIN_LENGTH = 12;
+// Staff and administrators can read every client record, so their accounts are
+// held to a longer minimum than a client's.
+export const STAFF_MIN_LENGTH = 16;
+const PRIVILEGED = new Set(['super_admin', 'admin', 'staff']);
+export const minLengthFor = (role) => (PRIVILEGED.has(String(role || '')) ? STAFF_MIN_LENGTH : MIN_LENGTH);
 // NIST asks for at least 64 accepted characters; the pre-hash below means we
 // can allow far more, and the cap is only here to bound request work.
 export const MAX_LENGTH = 200;
@@ -149,18 +156,32 @@ const variety = (s) =>
  * Screens a password. Returns { ok, score, problem }.
  * `score` is 0–4 and is only used for the strength meter's wording.
  */
-export function assessPassword(password, { email = '', name = '' } = {}) {
+// Each rule is stated once: the server enforces them and the browser's meter
+// renders the same list.
+export const COMPOSITION = [
+  { id: 'number', test: (pw) => /\d/.test(pw), label: 'A number', problem: 'Include at least one number.' },
+  { id: 'uppercase', test: (pw) => /[A-Z]/.test(pw), label: 'A capital letter', problem: 'Include at least one capital letter.' },
+  // A space is not a "special character" to most people, so it does not count.
+  { id: 'symbol', test: (pw) => /[^A-Za-z0-9\s]/.test(pw), label: 'A special character', problem: 'Include at least one special character, such as ! ? # or -.' },
+];
+
+export function assessPassword(password, { email = '', name = '', role = 'client' } = {}) {
   const pw = String(password ?? '');
   const bytes = Buffer.byteLength(pw, 'utf8');
+  const min = minLengthFor(role);
 
-  if (pw.length < MIN_LENGTH) {
-    return { ok: false, score: 0, problem: `Use at least ${MIN_LENGTH} characters.` };
+  if (pw.length < min) {
+    return { ok: false, score: 0, problem: `Use at least ${min} characters.` };
   }
   if (bytes > MAX_LENGTH) {
     return { ok: false, score: 0, problem: `Keep the password under ${MAX_LENGTH} characters.` };
   }
   if (/^\s|\s$/.test(pw)) {
     return { ok: false, score: 0, problem: 'Remove the space at the start or end.' };
+  }
+  const missing = COMPOSITION.find((rule) => !rule.test(pw));
+  if (missing) {
+    return { ok: false, score: 1, problem: missing.problem };
   }
 
   const norm = normalise(pw);
@@ -193,11 +214,11 @@ export function assessPassword(password, { email = '', name = '' } = {}) {
 
 /* -------------------------------------------------------- breach check */
 
-// Opt-in (PWNED_CHECK=on). Uses the k-anonymity range API: only the first five
-// characters of the SHA-1 are ever sent, never the password. Fails open — a
-// third-party outage must not stop people signing up.
+// On unless PWNED_CHECK=off. Uses the k-anonymity range API: only the first
+// five characters of the SHA-1 are ever sent, never the password. Fails open —
+// a third-party outage must not stop people signing up.
 export async function isBreached(password) {
-  if (process.env.PWNED_CHECK !== 'on') return false;
+  if (process.env.PWNED_CHECK === 'off') return false;
   const sha1 = crypto.createHash('sha1').update(String(password), 'utf8').digest('hex').toUpperCase();
   const [prefix, suffix] = [sha1.slice(0, 5), sha1.slice(5)];
   try {

@@ -1,7 +1,11 @@
-import 'dotenv/config'; import path from 'node:path'; import fs from 'node:fs'; import crypto from 'node:crypto'; import express from 'express'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import session from 'express-session'; import cookieParser from 'cookie-parser'; import multer from 'multer'; import sanitizeHtml from 'sanitize-html'; import slugify from 'slugify'; import { z } from 'zod'; import db from './db.js'; import { renderHome, renderService, renderNotFound, renderThanks, renderAdmin, serviceBySlug, serviceSlugs, baseUrl } from './render.js'; import { hashPassword, verifyPassword, needsRehash, assessPassword, isBreached, MIN_LENGTH, MAX_LENGTH } from './password.js'; import { SqliteSessionStore, lockedFor, recordFailure, clearFailures, retryMessage } from './store.js'; import { createCsrf, verifyUploads, safeFileName } from './security.js'; import { scanAndRemove } from './malware.js'; import { downloadUpload } from './storage.js'; import { sendMail, sendPasswordReset, sendSignInAlert } from './mailer.js'; import { generateSecret, generateCode, verifyCode, otpauthUri, formatSecret, generateRecoveryCodes, hashRecoveryCode, consumeRecoveryCode } from './totp.js'; import { toSvg } from './qr.js'; import { googleEnabled, authorisationUrl, exchangeCode, verifyIdToken, refuseReason } from './google.js'; import { normaliseEmail, normalisePhone, parseClientDateTime, isPastCalendarDate } from './validation.js';
+import 'dotenv/config'; import path from 'node:path'; import fs from 'node:fs'; import crypto from 'node:crypto'; import express from 'express'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import session from 'express-session'; import cookieParser from 'cookie-parser'; import multer from 'multer'; import sanitizeHtml from 'sanitize-html'; import slugify from 'slugify'; import { z } from 'zod'; import db from './db.js'; import { renderHome, renderService, renderNotFound, renderThanks, renderAdmin, serviceBySlug, serviceSlugs, baseUrl } from './render.js'; import { hashPassword, verifyPassword, needsRehash, assessPassword, isBreached, MIN_LENGTH, MAX_LENGTH, minLengthFor } from './password.js'; import { SqliteSessionStore, lockedFor, recordFailure, clearFailures, retryMessage } from './store.js'; import { createCsrf, verifyUploads, safeFileName } from './security.js'; import { scanAndRemove } from './malware.js'; import { downloadUpload } from './storage.js'; import { sendMail, sendPasswordReset, sendSignInAlert } from './mailer.js'; import { generateSecret, generateCode, verifyCode, otpauthUri, formatSecret, generateRecoveryCodes, hashRecoveryCode, consumeRecoveryCode } from './totp.js'; import { toSvg } from './qr.js'; import { googleEnabled, authorisationUrl, exchangeCode, verifyIdToken, refuseReason } from './google.js'; import { normaliseEmail, normalisePhone, parseClientDateTime, isPastCalendarDate } from './validation.js';
 const app=express(), root=path.resolve('.'), uploads=path.join(root,'uploads'); fs.mkdirSync(uploads,{recursive:true});
 if(process.env.NODE_ENV==='production'){const missing=['SESSION_SECRET'].filter(k=>!process.env[k]||process.env[k].length<32); if(process.env.MALWARE_SCAN==='off')missing.push('MALWARE_SCAN'); if(process.env.STORAGE_DRIVER&&process.env.STORAGE_DRIVER!=='local')missing.push(...['S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY'].filter(k=>!process.env[k])); if(missing.length){console.error(`Refusing to start: ${missing.join(', ')} must be configured in production.`); process.exit(1);}}
-const sessionSecret=process.env.SESSION_SECRET||crypto.randomBytes(32).toString('hex'); if(!process.env.SESSION_SECRET)console.warn('SESSION_SECRET is not set. Using a random development secret; sessions will not survive a restart.');
+const sessionSecret=process.env.SESSION_SECRET||crypto.randomBytes(32).toString('hex');
+// In production a missing secret is a deployment fault, not a default to paper
+// over: every restart would silently sign out every user.
+if(!process.env.SESSION_SECRET){if(process.env.NODE_ENV==='production')throw new Error('SESSION_SECRET is not set. Add it to the application environment (cPanel > Setup Node.js App > Environment variables) and restart.');console.warn('SESSION_SECRET is not set. Using a random development secret; sessions will not survive a restart.');}
+else if(process.env.SESSION_SECRET.length<32&&process.env.NODE_ENV==='production')throw new Error('SESSION_SECRET is shorter than 32 characters. Replace it with a long random value and restart.');
 app.disable('x-powered-by');
 // Number of proxies in front of the app. req.ip (and therefore rate limiting
 // and audit logs) is read from X-Forwarded-For, so this must match the real
@@ -72,7 +76,7 @@ app.use(csrf.issue);
 // travels in the form body, which multer has not parsed yet. It runs csrf.verify
 // itself, after the upload middleware.
 app.use((req,res,next)=>(req.method==='POST'&&req.path==='/api/quotes')?next():csrf.verify(req,res,next));
-const clean=v=>sanitizeHtml(String(v??''),{allowedTags:[],allowedAttributes:{}}).trim(); const ref=p=>`${p}-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; const audit=(req,a,e,id)=>db.prepare('INSERT INTO audit_logs(user_id,action,entity,entity_id,ip) VALUES(?,?,?,?,?)').run(req.session.user?.id||null,a,e,String(id||''),req.ip);
+const clean=v=>sanitizeHtml(String(v??''),{allowedTags:[],allowedAttributes:{}}).trim(); const ref=p=>`${p}-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; const audit=(req,a,e,id,actorId)=>db.prepare('INSERT INTO audit_logs(user_id,action,entity,entity_id,ip) VALUES(?,?,?,?,?)').run(req.session.user?.id||actorId||null,a,e,String(id||''),req.ip);
 const notify=async(subject,text)=>{if(!process.env.ALERT_EMAIL)return; await sendMail({to:process.env.ALERT_EMAIL,subject,text});};
 const hashResetToken=token=>crypto.createHash('sha256').update(token).digest('hex');
 const hashResetCode=code=>crypto.createHash('sha256').update(String(code)).digest('hex');
@@ -140,7 +144,7 @@ const checkPassword=async(password,context)=>{const verdict=assessPassword(passw
 const requestEmail=(value)=>normaliseEmail(value);
 const requestPhone=(value,country)=>{const raw=String(value??''); const [embeddedCountry,number]=raw.includes(':')?raw.split(/:(.*)/s):[country,raw]; return normalisePhone(number,embeddedCountry||'KE');};
 
-app.post('/api/auth/register',async(req,res)=>{try{const d=z.object({name:z.string().trim().min(2),email:z.string(),phone:z.string().min(1),password:z.string().min(MIN_LENGTH).max(MAX_LENGTH)}).parse(req.body); const email=requestEmail(d.email); if(!email)return res.status(400).json({error:'Enter a valid email address.',field:'email'}); const phone=requestPhone(d.phone,req.body.phone_country); if(!phone)return res.status(400).json({error:'Enter a valid phone number for the selected country.',field:'phone'}); const problem=await checkPassword(d.password,{email,name:d.name}); if(problem)return res.status(400).json({error:problem,field:'password'}); const info=db.prepare('INSERT INTO users(name,email,phone,password_hash,role) VALUES(?,?,?,?,?)').run(clean(d.name),email,phone,await hashPassword(d.password),'client'); audit(req,'register','user',info.lastInsertRowid); startSession(req,res,{id:info.lastInsertRowid,name:clean(d.name),email,phone,role:'client'},201);}catch(e){if(e.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'Email is already registered',field:'email'}); res.status(400).json({error:`Check the registration details. Passwords need at least ${MIN_LENGTH} characters.`});}});
+app.post('/api/auth/register',async(req,res)=>{try{const d=z.object({name:z.string().trim().min(2),email:z.string(),phone:z.string().min(1),password:z.string().min(MIN_LENGTH).max(MAX_LENGTH)}).parse(req.body); const email=requestEmail(d.email); if(!email)return res.status(400).json({error:'Enter a valid email address.',field:'email'}); const phone=requestPhone(d.phone,req.body.phone_country); if(!phone)return res.status(400).json({error:'Enter a valid phone number for the selected country.',field:'phone'}); const problem=await checkPassword(d.password,{email,name:d.name,role:'client'}); if(problem)return res.status(400).json({error:problem,field:'password'}); const info=db.prepare('INSERT INTO users(name,email,phone,password_hash,role) VALUES(?,?,?,?,?)').run(clean(d.name),email,phone,await hashPassword(d.password),'client'); audit(req,'register','user',info.lastInsertRowid,info.lastInsertRowid); startSession(req,res,{id:info.lastInsertRowid,name:clean(d.name),email,phone,role:'client'},201);}catch(e){if(e.code==='SQLITE_CONSTRAINT_UNIQUE')return res.status(409).json({error:'Email is already registered',field:'email'}); res.status(400).json({error:`Check the registration details. Passwords need at least ${MIN_LENGTH} characters.`});}});
 
 app.post('/api/auth/forgot-password',async(req,res)=>{
   const email=requestEmail(req.body.email); const user=email?db.prepare('SELECT id,name,email,is_active FROM users WHERE email=?').get(email):null;
@@ -160,22 +164,22 @@ app.post('/api/auth/forgot-password',async(req,res)=>{
 });
 
 app.post('/api/auth/reset-password',async(req,res)=>{
-  const token=String(req.body.token||''); const row=token?db.prepare('SELECT t.*,u.email,u.name,u.is_active FROM password_reset_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.used_at IS NULL').get(hashResetToken(token)):null;
+  const token=String(req.body.token||''); const row=token?db.prepare('SELECT t.*,u.email,u.name,u.role,u.is_active FROM password_reset_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.used_at IS NULL').get(hashResetToken(token)):null;
   if(!row||row.is_active===0||new Date(row.expires_at).getTime()<=Date.now())return res.status(400).json({error:'That reset link is invalid or has expired.'});
   const code=String(req.body.code||'');
   const expectedCodeHash=Buffer.from(row.code_hash||'');
   const suppliedCodeHash=Buffer.from(hashResetCode(code));
   if(!/^\d{6}$/.test(code)||expectedCodeHash.length!==suppliedCodeHash.length||!crypto.timingSafeEqual(suppliedCodeHash,expectedCodeHash))return res.status(400).json({error:'Enter the six-digit verification code sent to your email.',field:'code'});
   const next=String(req.body.new_password||'');
-  if(next.length<MIN_LENGTH||next.length>MAX_LENGTH)return res.status(400).json({error:`Use between ${MIN_LENGTH} and ${MAX_LENGTH} characters.`,field:'new_password'});
-  const problem=await checkPassword(next,{email:row.email,name:row.name}); if(problem)return res.status(400).json({error:problem,field:'new_password'});
+  if(next.length<minLengthFor(row.role)||next.length>MAX_LENGTH)return res.status(400).json({error:`Use between ${minLengthFor(row.role)} and ${MAX_LENGTH} characters.`,field:'new_password'});
+  const problem=await checkPassword(next,{email:row.email,name:row.name,role:row.role}); if(problem)return res.status(400).json({error:problem,field:'new_password'});
   const cutoff=new Date().toISOString(); const passwordHash=await hashPassword(next);
   db.transaction(()=>{
     db.prepare('UPDATE users SET password_hash=?,sessions_valid_from=? WHERE id=?').run(passwordHash,cutoff,row.user_id);
     db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE id=?').run(row.id);
     db.prepare('DELETE FROM password_reset_tokens WHERE user_id=? AND id<>?').run(row.user_id,row.id);
   })();
-  audit(req,'password_reset_completed','user',row.user_id);
+  audit(req,'password_reset_completed','user',row.user_id,row.user_id);
   res.json({ok:true});
 });
 
@@ -201,7 +205,7 @@ if(needsRehash(u.password_hash)){try{db.prepare('UPDATE users SET password_hash=
 // With two-factor on, the password alone buys nothing but a short-lived ticket
 // to the second step. No user is put on the session until that step passes.
 if(u.totp_enabled){req.session.pending={id:u.id,at:Date.now()}; audit(req,'login_2fa_pending','user',u.id); return req.session.save(()=>res.json({ok:true,twoFactorRequired:true}));}
-audit(req,'login','user',u.id); startSession(req,res,u);});
+audit(req,'login','user',u.id,u.id); startSession(req,res,u);});
 
 const PENDING_MS=5*60_000;
 const pendingUser=req=>{const p=req.session.pending; if(!p||Date.now()-p.at>PENDING_MS)return null; return db.prepare('SELECT * FROM users WHERE id=?').get(p.id)||null;};
@@ -216,12 +220,12 @@ app.post('/api/auth/2fa/verify',async(req,res)=>{const u=pendingUser(req);
     // replaying one captured moments ago, is refused.
     if(u.last_totp_step!==null&&step<=u.last_totp_step){recordFailure(key); return res.status(401).json({error:'That code has already been used. Wait for the next one.',field:'code'});}
     db.prepare('UPDATE users SET last_totp_step=? WHERE id=?').run(step,u.id);
-    clearFailures(key); delete req.session.pending; audit(req,'login','user',u.id); return startSession(req,res,u);
+    clearFailures(key); delete req.session.pending; audit(req,'login','user',u.id,u.id); return startSession(req,res,u);
   }
   const remaining=consumeRecoveryCode(JSON.parse(u.recovery_codes||'[]'),submitted);
   if(remaining){
     db.prepare('UPDATE users SET recovery_codes=? WHERE id=?').run(JSON.stringify(remaining),u.id);
-    clearFailures(key); delete req.session.pending; audit(req,'login_recovery_code','user',u.id);
+    clearFailures(key); delete req.session.pending; audit(req,'login_recovery_code','user',u.id,u.id);
     return startSession(req,res,u);
   }
   recordFailure(key); audit(req,'login_2fa_failed','user',u.id);
@@ -289,7 +293,7 @@ app.get('/api/auth/google/callback',async(req,res)=>{
     audit(req,'login_2fa_pending','user',user.id);
     return req.session.save(()=>res.redirect(pending.returnTo));
   }
-  audit(req,'login_google','user',user.id);
+  audit(req,'login_google','user',user.id,user.id);
   req.session.regenerate(err=>{
     if(err)return fail('Could not start a session.');
     req.session.user=publicUser(user);
@@ -355,9 +359,9 @@ app.post('/api/auth/password',auth(),async(req,res)=>{const u=db.prepare('SELECT
 const key=`chpw:${u.id}`; const waiting=lockedFor(key); if(waiting>0)return res.status(429).json({error:retryMessage(waiting)});
 if(!await verifyPassword(req.body.current_password,u.password_hash)){recordFailure(key); return res.status(401).json({error:'Your current password is not correct',field:'current_password'});}
 clearFailures(key);
-const next=String(req.body.new_password??''); if(next.length<MIN_LENGTH||next.length>MAX_LENGTH)return res.status(400).json({error:`Use between ${MIN_LENGTH} and ${MAX_LENGTH} characters.`,field:'new_password'});
+const next=String(req.body.new_password??''); if(next.length<minLengthFor(u.role)||next.length>MAX_LENGTH)return res.status(400).json({error:`Use between ${minLengthFor(u.role)} and ${MAX_LENGTH} characters.`,field:'new_password'});
 if(await verifyPassword(next,u.password_hash))return res.status(400).json({error:'Choose a password you have not used here before',field:'new_password'});
-const problem=await checkPassword(next,{email:u.email,name:u.name}); if(problem)return res.status(400).json({error:problem,field:'new_password'});
+const problem=await checkPassword(next,{email:u.email,name:u.name,role:u.role}); if(problem)return res.status(400).json({error:problem,field:'new_password'});
 db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await hashPassword(next),u.id); audit(req,'password_change','user',u.id);
 // A password change should invalidate whatever else was signed in, so the
 // session is rebuilt rather than carried over.
@@ -528,7 +532,7 @@ app.post('/api/admin/users',auth(MANAGER_ROLES),async(req,res)=>{try{
   if(d.role==='super_admin'&&req.session.user.role!=='super_admin')
     return res.status(403).json({error:'Only a super admin can create another super admin.',field:'role'});
   const email=d.email.toLowerCase();
-  const problem=await checkPassword(d.password,{email,name:d.name});
+  const problem=await checkPassword(d.password,{email,name:d.name,role:d.role});
   if(problem)return res.status(400).json({error:problem,field:'password'});
   const info=db.prepare('INSERT INTO users(name,email,phone,password_hash,role,created_by) VALUES(?,?,?,?,?,?)')
     .run(clean(d.name),email,clean(d.phone||''),await hashPassword(d.password),d.role,req.session.user.id);
@@ -621,7 +625,10 @@ app.get('/api/admin/messages',auth(STAFF_ROLES),(req,res)=>{const {limit,offset}
 
 app.get('/api/admin/audit',auth('super_admin','admin'),(req,res)=>{const {limit,offset}=page(req,50);
   res.json({total:db.prepare('SELECT COUNT(*) n FROM audit_logs').get().n,
-    items:db.prepare('SELECT a.*,u.name user_name,u.email user_email FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT ? OFFSET ?').all(limit,offset)});});
+    items:db.prepare(`SELECT a.*,u.name user_name,u.email user_email,t.name entity_name FROM audit_logs a
+      LEFT JOIN users u ON u.id=a.user_id
+      LEFT JOIN users t ON a.entity='user' AND t.id=CAST(a.entity_id AS INTEGER)
+      ORDER BY a.id DESC LIMIT ? OFFSET ?`).all(limit,offset)});});
 
 app.patch('/api/admin/quotes/:id',auth(STAFF_ROLES),(req,res)=>{if(!QUOTE_STATUSES.includes(req.body.status))return res.status(400).json({error:'Invalid status'}); // admin_notes is only written when the field is actually supplied. It used to
 // be assigned unconditionally, so changing a quote's status through the

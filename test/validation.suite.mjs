@@ -11,7 +11,7 @@ const agent = () => request.agent(app);
 const token = async (a) => (await a.get('/api/csrf')).body.csrfToken;
 const post = async (a, path, body) => a.post(path).set('CSRF-Token', await token(a)).send(body);
 const patch = async (a, path, body) => a.patch(path).set('CSRF-Token', await token(a)).send(body);
-const password = 'quiet lantern harbour method';
+const password = 'Quiet-Lantern-Harbour-Method-9!';
 
 const invalidEmail = await post(agent(), '/api/auth/register', {
   name: 'Invalid Email', email: 'not-an-email', phone: '0712345678', phone_country: 'KE', password,

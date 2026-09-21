@@ -14,7 +14,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const workDir = path.join(root, '.test-databases');
 
-const ADMIN_PASSWORD = 'TestPass-12345!';
+const ADMIN_PASSWORD = 'TestPass-12345!x';
 const baseEnv = {
   ...process.env,
   NODE_ENV: 'test',

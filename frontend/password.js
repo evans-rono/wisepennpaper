@@ -53,6 +53,16 @@ const isRun = (s) => {
 
 const LEVELS = ['Too weak', 'Weak', 'Fair', 'Good', 'Strong'];
 
+// Mirrors COMPOSITION in backend/password.js. A rule shown here is a rule the
+// server will actually enforce, so the meter never promises a password the
+// submit would reject.
+const RULES = [
+  { id: 'length', label: (min) => `At least ${min} characters`, test: (pw, min) => pw.length >= min },
+  { id: 'number', label: () => 'A number', test: (pw) => /\d/.test(pw) },
+  { id: 'uppercase', label: () => 'A capital letter', test: (pw) => /[A-Z]/.test(pw) },
+  { id: 'symbol', label: () => 'A special character', test: (pw) => /[^A-Za-z0-9\s]/.test(pw) },
+];
+
 export function rate(password, { email = '', name = '' } = {}) {
   const pw = String(password ?? '');
   // Nothing typed yet: stay quiet. The field's own help text already states the
@@ -123,33 +133,58 @@ function addReveal(input) {
 }
 
 function addMeter(input, form) {
+  // enhancePasswords may run over the same subtree more than once (a panel is
+  // re-rendered, or a parent and child are both enhanced); without this the
+  // meter would be appended again each time.
+  if (input.dataset.meterBound) return;
+  input.dataset.meterBound = '1';
+  // Staff fields declare a longer minimum through minlength.
+  const min = Number(input.getAttribute('minlength')) || MIN_LENGTH;
+
   const meter = document.createElement('div');
   meter.className = 'pw-meter';
   meter.innerHTML = `<div class="pw-bar"><i></i></div>
+    <ul class="pw-checks">${RULES.map((r) =>
+      `<li data-rule="${r.id}"><span class="pw-tick" aria-hidden="true"></span>${r.label(min)}</li>`).join('')}</ul>
     <p class="pw-note"><span class="pw-level"></span> <span class="pw-hint"></span></p>`;
   input.closest('.pw-field').after(meter);
 
   const bar = meter.querySelector('i');
   const level = meter.querySelector('.pw-level');
   const hint = meter.querySelector('.pw-hint');
+  const items = RULES.map((rule) => [rule, meter.querySelector(`[data-rule="${rule.id}"]`)]);
+
   // The meter is decoration around the input's own description; announcing
   // every keystroke would be noise, so it is not a live region.
   const update = () => {
+    const pw = input.value;
+    let unmet = 0;
+    for (const [rule, li] of items) {
+      const met = rule.test(pw, min);
+      if (!met) unmet++;
+      li.classList.toggle('met', met && pw.length > 0);
+      li.setAttribute('aria-label', `${rule.label(min)}: ${met && pw ? 'met' : 'not met'}`);
+    }
+
     const context = {
       email: form?.querySelector('input[type=email]')?.value || '',
       name: form?.querySelector('input[name=name], input[name=full_name]')?.value || '',
     };
-    const { score, label, hint: tip } = rate(input.value, context);
-    meter.dataset.score = String(score);
-    bar.style.width = (input.value ? (score + 1) * 20 : 0) + '%';
-    level.textContent = label;
-    hint.textContent = tip;
+    const { score, label, hint: tip } = rate(pw, context);
+    // Every rule has to pass before the bar claims anything beyond "too weak".
+    const shown = unmet ? Math.min(score, 1) : score;
+    meter.dataset.score = String(shown);
+    bar.style.width = (pw ? (shown + 1) * 20 : 0) + '%';
+    level.textContent = pw ? label : '';
+    hint.textContent = pw && !unmet ? tip : '';
   };
   input.addEventListener('input', update);
   update();
 }
 
 function addMatch(passwordInput, confirmInput) {
+  if (confirmInput.dataset.matchBound) return;
+  confirmInput.dataset.matchBound = '1';
   const note = document.createElement('p');
   note.className = 'pw-match';
   note.setAttribute('role', 'status');

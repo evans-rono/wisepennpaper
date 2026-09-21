@@ -8,6 +8,8 @@
     "start": "node backend/server.js",
     "seed": "node backend/seed.js",
     "mail:test": "node backend/mailtest.js",
+    "reset:test": "node backend/resettest.js",
+    "env:check": "node backend/envcheck.js",
     "test": "node test/run.mjs",
     "audit": "npm audit --audit-level=critical",
     "db:migrate": "node backend/db.js"

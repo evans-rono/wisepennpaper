@@ -19,13 +19,14 @@
 <body class="shell" data-state="signed-out">
 <button type="button" class="theme-toggle theme-toggle-fixed" id="themeToggle" aria-pressed="false" aria-label="Switch to dark theme"><span class="moon" aria-hidden="true">☾</span><span class="sun" aria-hidden="true">☀</span></button>
 
-<main id="login" class="login">
-  <div class="panel">
-    <div class="brand login-brand" role="img" aria-label="The Wise Pen N’ Paper"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="/logo.svg#logo"/></svg></div>
-    <h1>Staff sign in</h1>
+<main id="login" class="auth-shell">
+  <div class="auth-card">
+    <div class="brand" role="img" aria-label="The Wise Pen N’ Paper"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="/logo.svg#logo"/></svg></div>
+    <p class="eyebrow">Staff &amp; administration</p>
+    <h1>Sign in to the dashboard</h1>
+    <p class="auth-sub">Quotes, projects, clients and invoices. Staff accounts require two-step verification.</p>
 
     <form id="loginForm" novalidate>
-      <p class="field-help">Client accounts sign in at the <a href="/portal">client portal</a>.</p>
       <label>Email<input type="email" name="email" autocomplete="username" required autofocus></label>
       <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
       <button class="btn" type="submit">Continue</button>
@@ -58,6 +59,7 @@
       </div>
       <p class="form-status" role="status"></p>
     </form>
+    <p class="auth-foot">Looking for your projects? Sign in at the <a href="/portal">client portal</a>.</p>
   </div>
 </main>
 

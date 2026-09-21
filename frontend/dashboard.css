@@ -2,7 +2,9 @@
    <style> block in each page, which is also why the CSP had to allow inline
    styles. Loaded after styles.css. */
 
-.hidden { display: none; }
+.hidden { display: none !important; }
+/* !important because components below set their own display — .auth-shell is a
+   grid — and would otherwise win on source order and stay on screen. */
 
 /* ---------------------------------------------------------------- admin */
 
@@ -187,3 +189,112 @@
    .file-list li{display:block}
    .file-list small{display:block;margin-top:.35rem}
 }
+
+/* =========================================================== client portal
+   A dashboard rather than a stack of forms: a summary row, tabbed sections,
+   one status vocabulary, and account settings gathered in one place. */
+.portal { max-width: 1180px; }
+.portal-head { align-items: flex-start; margin-bottom: 1.6rem; }
+.portal-head h1 { font-size: clamp(1.9rem, 3.2vw, 2.6rem); margin: .1rem 0 .2rem; }
+.portal-sub { margin: 0; color: var(--muted); font-size: .92rem; }
+.portal-head-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+.stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-bottom: 1.8rem; }
+.stat-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1rem 1.1rem; }
+.stat-tile strong { display: block; font: 700 1.6rem/1.1 'Playfair Display', serif; color: var(--ink); }
+.stat-tile span { font-size: .82rem; color: var(--muted); }
+
+/* Scoped to .portal: /admin shares this file and styles its tabs as buttons. */
+.portal .tabs { display: flex; gap: .3rem; flex-wrap: wrap; border-bottom: 1px solid var(--line);
+  margin: 0 0 1.6rem; }
+.portal .tabs [role=tab] { border: 0; background: none; cursor: pointer; font: inherit; font-weight: 700;
+  color: var(--muted); padding: .7rem .9rem; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.portal .tabs [role=tab]:hover { color: var(--ink); }
+.portal .tabs [role=tab][aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.stack { display: grid; gap: 1rem; }
+.chip { display: inline-block; padding: .25rem .6rem; border-radius: 99px; font-size: .78rem; font-weight: 700;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 40%, transparent); background: color-mix(in oklab, var(--ok) 10%, transparent); }
+.chip.warn { color: var(--gold-ink); border-color: color-mix(in oklab, var(--gold) 45%, transparent); background: color-mix(in oklab, var(--gold) 12%, transparent); }
+.chip.err { color: var(--err); border-color: color-mix(in oklab, var(--err) 40%, transparent); background: color-mix(in oklab, var(--err) 10%, transparent); }
+.chip.live { color: var(--accent-ink); border-color: color-mix(in oklab, var(--accent) 40%, transparent); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+
+.card-head { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.card-head h3 { margin: .1rem 0 0; }
+.card-head small { color: var(--muted); font-size: .78rem; letter-spacing: .04em; }
+.progress-row { display: grid; grid-template-columns: 1fr auto; gap: .8rem; align-items: center; }
+.progress-row b { font-size: .85rem; color: var(--muted); }
+.milestones { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.milestones li { display: flex; justify-content: space-between; gap: 1rem; font-size: .9rem;
+  padding: .5rem .7rem; border-radius: 9px; background: var(--surface-2); }
+.milestones li span { color: var(--muted); font-size: .8rem; text-transform: capitalize; }
+.milestones li.done, .milestones li.complete, .milestones li.completed { color: var(--ok); }
+.thread > summary { cursor: pointer; font-weight: 700; padding: .5rem 0; }
+.thread .count { display: inline-grid; place-items: center; min-width: 1.4rem; height: 1.4rem; margin-left: .5rem;
+  border-radius: 99px; background: var(--surface-2); font-size: .75rem; color: var(--muted); }
+
+.account-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; align-items: start; }
+.account-grid .security-panel { grid-column: 1 / -1; }
+.recovery-box h3 { margin-top: 0; }
+
+@media (max-width: 900px) {
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .account-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .portal .tabs { gap: 0; }
+  .portal .tabs [role=tab] { padding: .6rem .55rem; font-size: .88rem; }
+}
+
+/* ============================================================ auth screens
+   One treatment for /admin, /portal and /reset-password: a centred card on a
+   quiet ground, with the wordmark, a clear title and one obvious action. */
+.auth-shell { min-height: calc(100dvh - 5rem); display: grid; place-items: center; padding: 3.5rem 5vw;
+  background: radial-gradient(circle at 15% 0%, var(--hero-glow) 0, transparent 38%), var(--surface-2); }
+.auth-shell.wide { align-items: start; }
+.auth-card { width: min(100%, 26.5rem); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 20px; padding: 2.1rem; box-shadow: 0 24px 60px -32px rgba(20, 35, 24, .45); }
+.auth-card .logo { height: 40px; width: auto; margin-bottom: 1.4rem; }
+.auth-card h1 { font-size: 1.75rem; margin: 0 0 .35rem; }
+.auth-card h2 { font-size: 1.25rem; margin: 0 0 .35rem; }
+.auth-sub { margin: 0 0 1.5rem; color: var(--muted); font-size: .92rem; }
+.auth-card .btn { width: 100%; }
+.auth-card .form-row .btn { width: auto; }
+.auth-foot { margin: 1.5rem 0 0; padding-top: 1.1rem; border-top: 1px solid var(--line);
+  text-align: center; font-size: .88rem; color: var(--muted); }
+.auth-foot a { font-weight: 700; color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Portal: the card sits beside a short explanation of what is behind sign-in. */
+.auth-split { display: grid; grid-template-columns: 1fr minmax(0, 26.5rem); gap: 4vw; align-items: center;
+  width: min(100%, 62rem); }
+.auth-pitch h1 { font-size: clamp(2rem, 4vw, 3rem); margin: .3rem 0 .6rem; }
+.auth-pitch p { max-width: 38ch; }
+.auth-points { list-style: none; padding: 0; margin: 1.6rem 0 0; display: grid; gap: .9rem; }
+.auth-points li { display: grid; grid-template-columns: 1.5rem 1fr; gap: .8rem; align-items: start; color: var(--muted); }
+.auth-points li::before { content: '✓'; display: grid; place-items: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 50%; background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent-ink);
+  font-size: .8rem; font-weight: 800; }
+.auth-points b { display: block; color: var(--ink); }
+
+/* Sign in / Create account within one card. */
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; padding: .25rem; margin-bottom: 1.5rem;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; }
+.auth-tabs [role=tab] { border: 0; background: none; font: inherit; font-weight: 700; color: var(--muted);
+  padding: .55rem; border-radius: 9px; cursor: pointer; }
+.auth-tabs [role=tab][aria-selected=true] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(20, 35, 24, .12); }
+
+/* What a password has to clear, stated before it is rejected. */
+.pw-rules { list-style: none; padding: 0; margin: -.4rem 0 1.1rem; display: grid; gap: .3rem;
+  font-size: .82rem; color: var(--muted); }
+.pw-rules li { display: grid; grid-template-columns: .9rem 1fr; gap: .5rem; }
+.pw-rules li::before { content: '·'; font-weight: 800; }
+
+@media (max-width: 860px) {
+  .auth-split { grid-template-columns: 1fr; gap: 2.5rem; }
+  .auth-pitch { text-align: left; }
+}
+/* Inside the portal the shell sits within the page container, so it drops the
+   tinted ground and lets the page carry it. */
+.portal .auth-shell { background: none; padding: 0; min-height: 0; }
+.portal .auth-split { width: 100%; margin: 1rem auto 0; }

@@ -232,3 +232,88 @@ textarea{resize:vertical}
   :is(.form-grid,.compact-form,form) label:has(select[data-phone-country]){grid-template-columns:1fr}
   :is(.form-grid,.compact-form,form) label:has(select[data-phone-country]) :is(select,input){grid-column:auto}
 }
+
+/* ------------------------------------------------------------ photography
+   Photos support the copy rather than carrying it. Shared frame, capped
+   heights, focal points chosen so faces are never cropped at the hairline,
+   and a caption that does the explaining so the picture can stay quiet. */
+.band-photo,.side-photo{margin:2.6rem 0 0;padding:0;border-radius:20px;overflow:hidden;background:var(--surface);
+  box-shadow:0 0 0 1px color-mix(in oklab,var(--line) 75%,transparent),0 18px 40px -24px rgba(20,35,24,.45)}
+.band-photo{grid-column:1/-1}
+#about.split{align-items:start;row-gap:0}
+.band-photo img,.side-photo img{display:block;width:100%;object-fit:cover;object-position:center 45%;
+  filter:saturate(.94) contrast(1.02)}
+.band-photo img{height:clamp(200px,24vw,340px)}
+.side-photo{margin-top:1.6rem}
+.side-photo img{height:clamp(170px,17vw,230px)}
+/* Group shots sit high in frame: pull the crop up so no one loses their head. */
+.focus-upper img{object-position:center 32%}
+/* Desk still life: the marked pages and checklist sit low in frame. */
+.focus-lower img{object-position:center 62%}
+.band-photo figcaption,.side-photo figcaption{padding:.85rem 1.15rem;font-size:.82rem;line-height:1.5;
+  color:var(--muted);border-top:1px solid color-mix(in oklab,var(--line) 70%,transparent)}
+[data-theme=dark] .band-photo img,[data-theme=dark] .side-photo img{filter:saturate(.8) contrast(1.02) brightness(.84)}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme=light]) .band-photo img,:root:not([data-theme=light]) .side-photo img{filter:saturate(.8) contrast(1.02) brightness(.84)}
+}
+@media(max-width:620px){
+  .band-photo img{height:clamp(180px,42vw,220px)}
+  .side-photo img{height:200px}
+}
+
+/* ------------------------------------------------ first-visit wayfinding */
+.hero-help{margin:.1rem 0 1.1rem;font-size:.95rem}
+.hero-help a{color:var(--accent-ink);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.sub-lead{margin:-.5rem 0 1.5rem;max-inline-size:62ch}
+.form-note{margin:0 0 1.3rem;font-size:.9rem;color:var(--muted)}
+
+@media print{.band-photo,.side-photo{display:none!important}}
+
+/* ------------------------------------------------- form + section polish */
+/* The quote tracker reads as numbered steps rather than a bulleted list. */
+.mini-process{list-style:none;margin:1.9rem 0 0;padding:0;counter-reset:step;display:grid;gap:.55rem}
+.mini-process li{counter-increment:step;display:grid;grid-template-columns:1.75rem 1fr;align-items:center;
+  gap:.75rem;padding:0;color:var(--muted);font-size:.95rem}
+.mini-process li::before{content:counter(step);display:grid;place-items:center;width:1.75rem;height:1.75rem;
+  border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:.78rem;font-weight:700;color:var(--muted)}
+.mini-process .on{color:var(--ink);font-weight:700}
+.mini-process .on::before{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+
+/* Subheads inside a section: same rhythm everywhere they appear. */
+.sub-head{margin:3.2rem 0 .5rem;font-size:1.2rem;letter-spacing:-.01em}
+.sub-lead{margin:0 0 1.9rem;max-inline-size:62ch}
+
+/* Standing note above a long form. */
+.form-note{margin:0 0 1.5rem;padding:.8rem .95rem;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface-2);font-size:.88rem;color:var(--muted)}
+.hero-help{color:var(--muted)}
+
+/* ------------------------------------------------------- space discipline
+   Panels no longer stretch to match a taller neighbour, empty-state notices
+   fill the row they sit in, and the section rhythm is tightened so wide
+   screens carry content rather than gaps. */
+.section{padding-block:4.25rem}
+.section-head{margin-bottom:2.4rem}
+.split{gap:4vw}
+.hero{gap:3vw}
+.quote-wrap,.contact,.learn{gap:4vw;align-items:start}
+.value-grid,.cards,.why,.testimonials,.portfolio-grid{gap:1.1rem}
+.cards .empty,.testimonials .empty{grid-column:1/-1}
+.band-photo,.side-photo{margin-top:2rem}
+.sub-head{margin-top:2.6rem}
+footer{padding-block:3.25rem}
+/* Form and consultation share one column, so the section stays a single row. */
+.quote-form-col{display:grid;align-content:start}
+.quote-form-col .consult-inline{margin-top:1.4rem}
+/* Contact copy column is the shorter one: let its photo take up the slack. */
+.contact .side-photo img{height:clamp(180px,21vw,300px)}
+
+/* Password requirements, ticked live as they are met. These are the same rules
+   the server enforces, so the list never promises a password it would reject. */
+.pw-checks{list-style:none;margin:.55rem 0 .4rem;padding:0;display:flex;flex-wrap:wrap;gap:.3rem .9rem;font-size:.8rem;color:var(--muted)}
+.pw-checks li{display:grid;grid-template-columns:1rem 1fr;gap:.35rem;align-items:center;font-weight:500}
+.pw-tick{display:grid;place-items:center;width:1rem;height:1rem;border-radius:50%;border:1px solid var(--control-line);font-size:.62rem;line-height:1}
+.pw-tick::before{content:'○';color:var(--muted)}
+.pw-checks li.met{color:var(--ok)}
+.pw-checks li.met .pw-tick{border-color:var(--ok);background:color-mix(in oklab,var(--ok) 15%,transparent)}
+.pw-checks li.met .pw-tick::before{content:'✓';color:var(--ok);font-weight:800}

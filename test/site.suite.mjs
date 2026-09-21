@@ -29,7 +29,11 @@ ok('bootstrap json present', h.includes('id="bootstrap"'));
 ok('csrf hidden field in all 3 forms', (h.match(/name="_csrf"/g) || []).length === 3);
 ok('all ssr slots filled', !h.includes('<!--ssr:'));
 ok('noscript present', h.includes('<noscript>'));
-ok('dialogs are <dialog>', (h.match(/<dialog class="modal"/g) || []).length === 4);
+// Search and service detail. Signing in lives on /portal only: a second copy
+// in a dialog here would be a separate implementation of the same forms.
+ok('dialogs are <dialog>', (h.match(/<dialog class="modal"/g) || []).length === 2);
+ok('no duplicate auth dialog', !h.includes('id="signinModal"') && !h.includes('id="signupModal"'));
+ok('sign in points at the portal', h.includes('id="authNav"'));
 ok('no inline style attributes', !/ style="/.test(h));
 ok('portfolio empty state present', h.includes('portfolio-empty'));
 

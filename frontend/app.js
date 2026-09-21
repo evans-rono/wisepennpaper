@@ -1,8 +1,7 @@
 import {
   esc, api, postJson, getSession, logout, isStaff, homeFor,
-  formData, bootstrap, setStatus, submitForm, initThemeToggle, revealGoogleSignIn,
+  formData, bootstrap, setStatus, submitForm, initThemeToggle,
 } from '/shared.js';
-import { enhancePasswords } from '/password.js';
 import { enhancePhoneFields, enhanceEmailFields, setDynamicDateTime } from '/phone.js';
 
 // Services, portfolio, FAQs and settings are rendered into the page by the
@@ -67,57 +66,17 @@ async function renderAuthNav() {
     // Signed-out visitors and a failed session lookup look the same here, and
     // the sign-in buttons are the right fallback for both.
   }
+  // Signing in happens on the client portal, which is also where a reset link
+  // and a staff redirect land. A second copy in a dialog here would be a
+  // separate implementation of the same forms.
   nav.innerHTML = user
     ? `<a class="btn ghost small" href="${homeFor(user)}">${isStaff(user.role) ? 'Dashboard' : 'My projects'}</a>
        <button class="btn ghost small" data-auth="signout">Sign out</button>`
-    : `<button class="btn ghost small" data-auth="signin">Sign in</button>
-       <button class="btn small" data-auth="signup">Sign up</button>`;
+    : `<a class="btn ghost small" href="/portal">Sign in</a>
+       <a class="btn small" href="/portal?new=1">Create account</a>`;
   nav.hidden = false;
-  nav.querySelectorAll('[data-auth]').forEach((b) => {
-    b.addEventListener('click', () => {
-      if (b.dataset.auth !== 'signout') return void openDialog(b.dataset.auth + 'Modal');
-      logout().catch(() => {}).finally(() => location.reload());
-    });
-  });
-}
-
-function bindAuth() {
-  enhancePasswords(document);
-  for (const id of ['signinModal', 'signupModal']) {
-    const d = document.querySelector('#' + id);
-    bindDialog(d);
-    d?.querySelectorAll('[data-auth-switch]').forEach((b) =>
-      b.addEventListener('click', () => {
-        d.close();
-        openDialog(b.dataset.authSwitch + 'Modal');
-      }));
-  }
-
-  for (const [id, url] of [['signinForm', '/api/auth/login'], ['signupForm', '/api/auth/register']]) {
-    const form = document.querySelector('#' + id);
-    if (!form) continue;
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (!form.reportValidity()) return;
-      const res = await submitForm(form, () => postJson(url, formData(form)), 'Checking your details…');
-      if (!res) return;
-      setStatus(form, 'Signed in. Taking you to your projects…');
-      location.href = homeFor(res.user);
-    });
-  }
-
-  document.querySelectorAll('[data-password-reset]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const form = button.closest('form');
-      const email = form?.email?.value.trim() || '';
-      if (!email) return setStatus(form, 'Enter your email address first.', false);
-      try {
-        await postJson('/api/auth/forgot-password', { email });
-        setStatus(form, 'If the account exists, an email with a reset link and six-digit verification code has been sent.');
-      } catch (error) {
-        setStatus(form, error.message, false);
-      }
-    });
+  nav.querySelectorAll('[data-auth="signout"]').forEach((b) => {
+    b.addEventListener('click', () => logout().catch(() => {}).finally(() => location.reload()));
   });
 }
 
@@ -315,7 +274,7 @@ function bindSimpleForms() {
 /* ------------------------------------------------------------------- init */
 
 // Each binding is independent: one failure must not leave the quote form dead.
-for (const bind of [initThemeToggle, bindNav, bindAuth, bindServices, bindPortfolio, bindSearch, bindQuoteForm, bindSimpleForms]) {
+for (const bind of [initThemeToggle, bindNav, bindServices, bindPortfolio, bindSearch, bindQuoteForm, bindSimpleForms]) {
   try {
     bind();
   } catch (err) {
@@ -324,7 +283,6 @@ for (const bind of [initThemeToggle, bindNav, bindAuth, bindServices, bindPortfo
 }
 
 renderAuthNav().catch((err) => console.error('renderAuthNav failed', err));
-revealGoogleSignIn();
 enhancePhoneFields();
 enhanceEmailFields();
 setDynamicDateTime();

@@ -7,8 +7,8 @@ const ok=(n,c,e='')=>{ if(c){pass++;console.log('  PASS  '+n);} else {fail++;con
 const agent=()=>request.agent(app);
 const post=async(a,u,b)=>{const t=(await a.get('/api/csrf')).body.csrfToken; return a.post(u).set('CSRF-Token',t).send(b);};
 const patch=async(a,u,b)=>{const t=(await a.get('/api/csrf')).body.csrfToken; return a.patch(u).set('CSRF-Token',t).send(b);};
-const ADMIN={email:'admin@wisepennpaper.co.ke',password:'TestPass-12345!'};
-const PW='copper vessel morning ledger';
+const ADMIN={email:'admin@wisepennpaper.co.ke',password:'TestPass-12345!x'};
+const PW='Copper-Vessel-Morning-Ledger-7!';
 
 const su=agent();
 const login=await post(su,'/api/auth/login',ADMIN);
@@ -64,9 +64,9 @@ ok('the last super admin cannot be demoted',
   (await patch(su,'/api/admin/users/'+meId,{role:'admin'})).status===403);
 
 const adminEmail=`adm${Date.now()}@example.com`;
-await post(su,'/api/admin/users',{name:'Plain Admin',email:adminEmail,role:'admin',password:'brass compass evening tide'});
+await post(su,'/api/admin/users',{name:'Plain Admin',email:adminEmail,role:'admin',password:'Brass-Compass-Evening-Tide-4!'});
 const plain=agent();
-await post(plain,'/api/auth/login',{email:adminEmail,password:'brass compass evening tide'});
+await post(plain,'/api/auth/login',{email:adminEmail,password:'Brass-Compass-Evening-Tide-4!'});
 const ps=await post(plain,'/api/auth/2fa/setup',{});
 await post(plain,'/api/auth/2fa/enable',{code:generateCode(ps.body.secret.replace(/\s/g,''))});
 const esc1=await post(plain,'/api/admin/users',{name:'Escalation Attempt',email:`y${Date.now()}@e.co`,role:'super_admin',password:PW});

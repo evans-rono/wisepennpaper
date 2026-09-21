@@ -191,7 +191,7 @@ ok('safeFileName bounds the length', safeFileName('x'.repeat(400)).length <= 120
 {
   // Successful sign-ins must not consume the credential budget.
   const email = `sec${Date.now()}@example.com`;
-  const pw = 'copper vessel morning ledger';
+  const pw = 'Copper-Vessel-Morning-Ledger-7!';
   const reg = agent();
   await reg.post('/api/auth/register').set('CSRF-Token', await token(reg))
     .send({ name: 'Sec Test', email, phone: '0700000000', password: pw });

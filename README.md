@@ -136,3 +136,33 @@ match that, so no code changes are needed.
 Redeploying is: upload changed files, run NPM Install if dependencies moved,
 then Restart. Shared hosts often block outbound SMTP to other providers; see the
 mail notes in `.env.example` if Gmail times out.
+
+### Password reset email on cPanel
+
+Nothing in the reset flow needs configuring; it needs a working mailbox. The
+server generates a single-use link and a six-digit code, sends both to the
+address held on the account, and never reveals whether an address is registered.
+
+1. cPanel > **Email Accounts** > Create, e.g. `no-reply@<yourdomain>`.
+2. Add to the application environment, then Restart:
+   `SMTP_HOST=mail.<yourdomain>`, `SMTP_PORT=465`, `SMTP_SECURE=on`,
+   `SMTP_USER` and `MAIL_FROM` set to that mailbox, `SMTP_PASS` its password.
+   `BASE_URL` must be the live site — the reset link is built from it, so a
+   stale value emails a link to localhost.
+3. Prove the mailbox works at all:
+   `npm run mail:test -- you@example.com`
+4. Prove the reset path works end to end:
+   `npm run reset:test -- a.real.client@example.com`
+   It calls the live endpoint exactly as the browser does and reports whether a
+   token row was created and whether mail is configured to carry it. Then check
+   the inbox, open the link, and set a new password.
+
+If no email arrives, the send failure is logged by the application (cPanel >
+Setup Node.js App > Log). Common causes: SMTP credentials wrong, the host
+blocking the port, or the message sitting in spam because `MAIL_FROM` is not a
+mailbox on your own domain.
+
+`npm run reset:test -- someone@example.com --issue` prints a working reset link
+and code without sending mail. Use it to get into an account while SMTP is still
+being sorted out; it needs shell and database access, which is already enough to
+change a password directly.

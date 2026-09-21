@@ -301,7 +301,7 @@ const TABS = {
           <option value="admin">admin — can also edit content and the team</option>
           ${canSuper ? '<option value="super_admin">super admin — full control</option>' : ''}
         </select></label>
-        <label>Temporary password<input type="password" name="password" required minlength="12" data-pw-meter></label>
+        <label>Temporary password<input type="password" name="password" required minlength="16" data-pw-meter></label>
         <small class="field-help">Ask them to change it once they are in. Admin roles must set up two-step verification before the dashboard opens.</small>
         <button class="btn" type="submit">Create account</button>
         <p class="form-status" role="status"></p>
@@ -404,9 +404,13 @@ const TABS = {
       ['When', 'Who', 'Action', 'Entity', 'Address'],
       items.map((a) => `<tr>
         <td>${esc(dateOnly(a.created_at))}</td>
-        <td>${esc(a.user_name || 'anonymous')}${a.user_email ? `<br><small>${esc(a.user_email)}</small>` : ''}</td>
+        <td>${a.user_name
+          ? `${esc(a.user_name)}${a.user_email ? `<br><small>${esc(a.user_email)}</small>` : ''}`
+          : '<span class="muted">not signed in</span>'}</td>
         <td><code>${esc(a.action)}</code></td>
-        <td>${esc(a.entity)}${a.entity_id ? ` <small>${esc(a.entity_id)}</small>` : ''}</td>
+        <td>${esc(a.entity)}${a.entity_name
+          ? ` <small>${esc(a.entity_name)}</small>`
+          : a.entity_id ? ` <small>${esc(a.entity_id)}</small>` : ''}</td>
         <td><small>${esc(a.ip || '')}</small></td>
       </tr>`).join('')) : empty('Nothing recorded yet.')) + pager('audit', total);
   },
@@ -861,6 +865,10 @@ async function selectTab(name) {
   } catch (err) {
     panel.innerHTML = `<p class="form-status err">${esc(err.message)}</p>`;
   }
+  // Every panel is rendered from a template, so the show/hide control and the
+  // strength meter are attached here rather than in each panel that has a
+  // password field.
+  enhancePasswords(panel);
   panel.querySelectorAll('[data-page]').forEach((b) =>
     b.addEventListener('click', () => {
       offsets[name] = Math.max(0, offsets[name] + (b.dataset.page === 'next' ? PAGE : -PAGE));

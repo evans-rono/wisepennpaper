@@ -21,7 +21,7 @@ const patch = async (a, url, body) => {
   const t = await token(a);
   return a.patch(url).set('CSRF-Token', t).send(body);
 };
-const ADMIN = { email: 'admin@wisepennpaper.co.ke', password: 'TestPass-12345!' };
+const ADMIN = { email: 'admin@wisepennpaper.co.ke', password: 'TestPass-12345!x' };
 // Replay protection refuses a step that was already used. Separate sign-ins in
 // the same 30-second window are exactly what it stops, so tests that need one
 // clear the marker rather than reaching for an out-of-window code.
@@ -190,7 +190,7 @@ const staffAgent = agent();
    there instead. */
 {
   const email = `opt${Date.now()}@example.com`;
-  const password = 'copper vessel morning ledger';
+  const password = 'Copper-Vessel-Morning-Ledger-7!';
   await post(staffAgent, '/api/admin/users', { name: 'Optional Staff', email, role: 'staff', password });
 
   const worker = agent();
@@ -268,7 +268,7 @@ await post(staff, '/api/auth/2fa/verify', { code: freshCode() });
   // A client account must not reach staff endpoints.
   const client = agent();
   const email = `adm${Date.now()}@example.com`;
-  await post(client, '/api/auth/register', { name: 'Client', email, phone: '0700000000', password: 'copper vessel morning ledger' });
+  await post(client, '/api/auth/register', { name: 'Client', email, phone: '0700000000', password: 'Copper-Vessel-Morning-Ledger-7!' });
   for (const url of ['/api/admin/quotes', '/api/admin/audit']) {
     ok(`a client cannot reach ${url}`, (await client.get(url)).status === 403, url);
   }

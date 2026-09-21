@@ -53,6 +53,7 @@
     <h1>Turning Ideas Into Books, Brands &amp; <em>Stories That Matter.</em></h1>
     <p class="lead">We help authors, organisations, businesses and institutions transform promising ideas into professionally edited, designed and produced publications.</p>
     <div class="actions"><a class="btn" href="#quote">Start Your Publishing Journey</a><a class="btn ghost" href="#services">Explore Our Services</a></div>
+    <p class="hero-help">New to publishing? Read <a href="#how">how we work</a>, or <a href="#contact">speak to our team</a>.</p>
     <ul class="checks"><li>Personalised guidance</li><li>End-to-end support</li><li>Kenyan market expertise</li></ul>
   </div>
   <div class="hero-art" role="img" aria-label="Editorial still life with books and writing tools">
@@ -78,6 +79,11 @@
     <article><b>Our promise</b><p>Thoughtful collaboration, dependable delivery and quality at every stage.</p></article>
     <article><b>Our values</b><p>Integrity, creativity, excellence, respect and client-centred service.</p></article>
   </div>
+  <figure class="band-photo focus-upper">
+    <img src="/images/about-team.webp" width="1600" height="686" loading="lazy" decoding="async"
+         alt="Wise Pen N’ Paper staff reviewing a printed manuscript with a client at a table of published books.">
+    <figcaption>Editorial, design and production expertise in one team.</figcaption>
+  </figure>
 </section>
 
 <section id="services" class="section tinted">
@@ -86,7 +92,13 @@
     <p>Choose focused support or an end-to-end pathway. Every service can be tailored to the manuscript, audience, budget and intended outcome.</p>
   </header>
   <div id="serviceGrid" class="cards"><!--ssr:services--><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><!--/ssr:services--></div>
-  <h3 class="sub-head">How it works</h3>
+  <figure class="band-photo focus-lower">
+    <img src="/images/editing-desk.webp" width="1200" height="800" loading="lazy" decoding="async"
+         alt="A manuscript marked up for clarity, structure and grammar beside an editor’s final checklist.">
+    <figcaption>Structure, clarity and consistency, reviewed pass by pass.</figcaption>
+  </figure>
+  <h3 class="sub-head" id="how">How we work</h3>
+  <p class="sub-lead">Five stages, each closing with a defined review point before the project moves on.</p>
   <div class="steps">
     <article><span>01</span><h3>Submit Your Idea</h3><p>Share your goals, draft and intended audience through our secure project form.</p></article>
     <article><span>02</span><h3>Consultation &amp; Assessment</h3><p>We review the project, clarify priorities and recommend the right route.</p></article>
@@ -108,6 +120,11 @@
     </div>
   </header>
   <div id="portfolioGrid" class="portfolio-grid"><!--ssr:portfolio--><!--/ssr:portfolio--></div>
+  <figure class="band-photo focus-upper">
+    <img src="/images/special-projects.webp" width="1400" height="788" loading="lazy" decoding="async"
+         alt="A creative team planning book covers and page layouts around a studio table.">
+    <figcaption>Covers, layouts and campaign material developed for a defined audience.</figcaption>
+  </figure>
 </section>
 
 <section class="section">
@@ -120,7 +137,7 @@
     <article><i aria-hidden="true">♡</i><h3>Client-centred</h3><p>Clear communication and meaningful approvals throughout.</p></article>
     <article><i aria-hidden="true">◷</i><h3>Reliable delivery</h3><p>Visible milestones, accountable ownership and practical schedules.</p></article>
   </div>
-  <h3 class="sub-head">Who we support</h3>
+  <h3 class="sub-head">Who we work with</h3>
   <div class="pill-grid"><span>Authors &amp; Writers</span><span>Businesses</span><span>NGOs</span><span>Educational Institutions</span><span>Government &amp; Public Sector</span><span>Healthcare Professionals</span><span>Corporate Organisations</span><span>Financial Institutions</span><span>Creative Professionals</span></div>
 </section>
 
@@ -147,70 +164,84 @@
     <p class="eyebrow">Request a quote</p>
     <h2>Tell us what you want to create.</h2>
     <p>Complete the guided form and attach any available manuscript or reference material. You will receive a unique project reference immediately.</p>
-    <ol class="mini-process"><li class="on" aria-current="step">Your details</li><li>Project brief</li><li>Files &amp; budget</li></ol>
-    <details class="consult-inline">
-      <summary>Prefer to talk first? Book a consultation</summary>
-      <p>Request a focused consultation about your manuscript, publication or content project.</p>
-      <form id="appointmentForm" class="compact-form" method="post" action="/api/appointments">
-        <!--ssr:csrf--><!--/ssr:csrf-->
-        <label class="sr-only" for="ap-name">Full name</label><input id="ap-name" name="full_name" placeholder="Full name" required minlength="2">
-        <label class="sr-only" for="ap-email">Email</label><input id="ap-email" type="email" name="email" placeholder="Email" required>
-        <label class="sr-only" for="ap-phone">Phone</label><select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input id="ap-phone" data-phone-number="phone" name="phone" placeholder="Phone" required minlength="7">
-        <label class="sr-only" for="ap-type">Consultation type</label>
-        <select id="ap-type" name="consultation_type" required><option value="">Consultation type</option><option>Publishing assessment</option><option>Editorial consultation</option><option>Corporate publication brief</option><option>Design and production</option></select>
-        <label class="sr-only" for="ap-date">Preferred date</label><input id="ap-date" type="date" name="preferred_date" data-future-date required><input type="hidden" name="timezone_offset" data-timezone-offset>
-        <label class="sr-only" for="ap-time">Preferred time</label><input id="ap-time" type="time" name="preferred_time" required>
-        <label class="sr-only" for="ap-info">Project information</label><textarea id="ap-info" name="project_info" placeholder="Briefly describe your project"></textarea>
-        <button class="btn" type="submit">Request consultation</button>
-        <p class="form-status" role="status"></p>
-      </form>
-    </details>
+    <ol class="mini-process"><li class="on" aria-current="step">Your details</li><li>Project brief</li><li>Files and budget</li></ol>
+    <figure class="side-photo">
+      <img src="/images/consultation.webp" width="1200" height="900" loading="lazy" decoding="async"
+           alt="A publishing consultant talking an author through a five-stage publishing roadmap.">
+      <figcaption>A consultation sets out your route from manuscript to publication.</figcaption>
+    </figure>
   </div>
-  <form id="quoteForm" class="panel" method="post" action="/api/quotes" enctype="multipart/form-data">
-    <!--ssr:csrf--><!--/ssr:csrf-->
-    <div class="form-step active" data-step="1">
-      <h3>1. Client information</h3>
-      <div class="form-grid">
-        <label>Full name<input name="full_name" required minlength="2" autocomplete="name"></label>
-        <label>Email<input type="email" name="email" required autocomplete="email"></label>
-        <label>Phone<select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input data-phone-number="phone" name="phone" required minlength="7" autocomplete="tel"></label>
-        <label>Organisation<input name="organisation" autocomplete="organization"></label>
-        <label class="wide">Location<input name="location" placeholder="Town / county"></label>
+  <div class="quote-form-col">
+    <form id="quoteForm" class="panel" method="post" action="/api/quotes" enctype="multipart/form-data">
+      <!--ssr:csrf--><!--/ssr:csrf-->
+      <p class="form-note">Three steps, about three minutes. Optional fields are marked; files may follow later.</p>
+      <div class="form-step active" data-step="1">
+        <h3>Step 1 of 3 · Your details</h3>
+        <div class="form-grid">
+          <label>Full name<input name="full_name" required minlength="2" autocomplete="name"></label>
+          <label>Email<input type="email" name="email" required autocomplete="email"></label>
+          <label>Phone<select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input data-phone-number="phone" name="phone" required minlength="7" autocomplete="tel"></label>
+          <label>Organisation (optional)<input name="organisation" autocomplete="organization"></label>
+          <label class="wide">Location (optional)<input name="location" placeholder="Town / county"></label>
+        </div>
       </div>
-    </div>
-    <div class="form-step" data-step="2">
-      <h3>2. Project information</h3>
-      <div class="form-grid">
-        <label>Project type<select name="project_type" required><option value="">Select</option><option>Book</option><option>Corporate publication</option><option>Magazine</option><option>Branding</option><option>Other</option></select></label>
-        <label>Service required<select name="service_id" id="serviceSelect"><option value="">Select service</option><!--ssr:serviceOptions--><!--/ssr:serviceOptions--></select></label>
-        <label class="wide">Project title<input name="project_title" required minlength="2"></label>
-        <label class="wide">Description<textarea name="description" required minlength="20" rows="5"></textarea></label>
-        <label>Target audience<input name="target_audience"></label>
-        <label>Pages / word estimate<input name="page_word_estimate"></label>
-        <label>Quantity required<input type="number" name="quantity" min="1"></label>
-        <label>Expected completion date<input type="date" name="expected_date" data-future-date></label>
+      <div class="form-step" data-step="2">
+        <h3>Step 2 of 3 · Project brief</h3>
+        <div class="form-grid">
+          <label>Project type<select name="project_type" required><option value="">Select</option><option>Book</option><option>Corporate publication</option><option>Magazine</option><option>Branding</option><option>Other</option></select></label>
+          <label>Service required (optional)<select name="service_id" id="serviceSelect"><option value="">Select service</option><!--ssr:serviceOptions--><!--/ssr:serviceOptions--></select></label>
+          <label class="wide">Project title<input name="project_title" required minlength="2"></label>
+          <label class="wide">Description<textarea name="description" required minlength="20" rows="5"></textarea></label>
+          <label>Target audience (optional)<input name="target_audience"></label>
+          <label>Pages / word estimate (optional)<input name="page_word_estimate"></label>
+          <label>Quantity required (optional)<input type="number" name="quantity" min="1"></label>
+          <label>Expected completion date (optional)<input type="date" name="expected_date" data-future-date></label>
+        </div>
       </div>
-    </div>
-    <div class="form-step" data-step="3">
-      <h3>3. Files &amp; budget</h3>
-      <label>Project files<input type="file" name="files" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"><small>Up to 5 files, 15 MB each. PDF, Word, JPG or PNG.</small></label>
-      <label>Estimated budget (optional)<input name="budget" placeholder="e.g. KES 80,000–120,000"></label>
-      <label class="check"><input type="checkbox" name="consent" required> I consent to Wise Pen N’ Paper using these details to assess my project.</label>
-    </div>
-    <div class="form-actions">
-      <button type="button" class="btn ghost prev" hidden>Back</button>
-      <button type="button" class="btn next" hidden>Continue</button>
-      <button type="submit" class="btn submit">Submit request</button>
-    </div>
-    <p class="form-status" role="status"></p>
-  </form>
+      <div class="form-step" data-step="3">
+        <h3>Step 3 of 3 · Files and budget</h3>
+        <label>Project files (optional)<input type="file" name="files" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"><small>Up to 5 files, 15 MB each: PDF, Word, JPG or PNG. Files may also follow after we reply.</small></label>
+        <label>Estimated budget (optional)<input name="budget" placeholder="e.g. KES 80,000–120,000"></label>
+        <label class="check"><input type="checkbox" name="consent" required> I consent to Wise Pen N’ Paper using these details to assess my project.</label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn ghost prev" hidden>Back</button>
+        <button type="button" class="btn next" hidden>Continue</button>
+        <button type="submit" class="btn submit">Submit request</button>
+      </div>
+      <p class="form-status" role="status"></p>
+    </form>
+      <details class="consult-inline">
+        <summary>Prefer to talk first? Book a consultation</summary>
+        <p>Request a focused consultation about your manuscript, publication or content project.</p>
+        <form id="appointmentForm" class="compact-form" method="post" action="/api/appointments">
+          <!--ssr:csrf--><!--/ssr:csrf-->
+          <label class="sr-only" for="ap-name">Full name</label><input id="ap-name" name="full_name" placeholder="Full name" required minlength="2">
+          <label class="sr-only" for="ap-email">Email</label><input id="ap-email" type="email" name="email" placeholder="Email" required>
+          <label class="sr-only" for="ap-phone">Phone</label><select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input id="ap-phone" data-phone-number="phone" name="phone" placeholder="Phone" required minlength="7">
+          <label class="sr-only" for="ap-type">Consultation type</label>
+          <select id="ap-type" name="consultation_type" required><option value="">Consultation type</option><option>Publishing assessment</option><option>Editorial consultation</option><option>Corporate publication brief</option><option>Design and production</option></select>
+          <label class="sr-only" for="ap-date">Preferred date</label><input id="ap-date" type="date" name="preferred_date" data-future-date required><input type="hidden" name="timezone_offset" data-timezone-offset>
+          <label class="sr-only" for="ap-time">Preferred time</label><input id="ap-time" type="time" name="preferred_time" required>
+          <label class="sr-only" for="ap-info">Project information</label><textarea id="ap-info" name="project_info" placeholder="Briefly describe your project"></textarea>
+          <button class="btn" type="submit">Request consultation</button>
+          <p class="form-status" role="status"></p>
+        </form>
+      </details>
+  </div>
 </section>
 
 <section id="contact" class="section contact">
   <div>
     <p class="eyebrow">Contact</p>
     <h2>Let’s make your next publication count.</h2>
+    <p class="lead">If you are unsure which service fits, outline the project in a sentence or two. We will set out the options, the stages involved and indicative costs.</p>
     <!--ssr:contact--><!--/ssr:contact-->
+    <figure class="side-photo">
+      <img src="/images/contact-support.webp" width="1200" height="900" loading="lazy" decoding="async"
+           alt="A Wise Pen N’ Paper adviser answering client enquiries at a desk.">
+      <figcaption>Enquiries are answered with clear next steps.</figcaption>
+    </figure>
   </div>
   <form id="contactForm" class="panel" method="post" action="/api/contact">
     <!--ssr:csrf--><!--/ssr:csrf-->
@@ -254,65 +285,6 @@
   </div>
 </dialog>
 
-<dialog class="modal" id="signinModal" aria-labelledby="signinTitle">
-  <div class="modal-card auth-card">
-    <button type="button" class="close" aria-label="Close sign in">×</button>
-    <form id="signinForm">
-      <h2 id="signinTitle">Welcome back</h2>
-      <p>Access your projects, quotes, appointments and invoices.</p>
-      <label>Email<input type="email" name="email" autocomplete="email" required></label>
-      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
-      <button class="btn" type="submit">Sign in</button>
-      <button class="btn ghost" type="button" data-password-reset>Forgot password?</button>
-      <p class="form-status" role="status"></p>
-    </form>
-      <div class="sso" hidden data-google>
-        <div class="sso-divider"><span>or</span></div>
-        <a class="btn ghost sso-btn" href="/api/auth/google?next=portal">
-          <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true" focusable="false">
-            <path fill="#4285F4" d="M17.6 9.2c0-.6-.1-1.3-.2-1.9H9v3.5h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.7-3.9 2.7-6.5z"/>
-            <path fill="#34A853" d="M9 18c2.4 0 4.5-.8 6-2.2l-2.9-2.3c-.8.6-1.9.9-3.1.9-2.4 0-4.4-1.6-5.1-3.8H.9v2.3A9 9 0 0 0 9 18z"/>
-            <path fill="#FBBC05" d="M3.9 10.7a5.4 5.4 0 0 1 0-3.4V5H.9a9 9 0 0 0 0 8l3-2.3z"/>
-            <path fill="#EA4335" d="M9 3.6c1.3 0 2.5.5 3.4 1.3l2.6-2.6A9 9 0 0 0 .9 5l3 2.3C4.6 5.2 6.6 3.6 9 3.6z"/>
-          </svg>
-          Continue with Google
-        </a>
-      </div>
-    <p class="auth-switch">New here? <button type="button" class="link-btn" data-auth-switch="signup">Create an account</button></p>
-  </div>
-</dialog>
-
-<dialog class="modal" id="signupModal" aria-labelledby="signupTitle">
-  <div class="modal-card auth-card">
-    <button type="button" class="close" aria-label="Close sign up">×</button>
-    <form id="signupForm">
-      <h2 id="signupTitle">Create your client account</h2>
-      <p>Follow your publishing project from first brief to final delivery.</p>
-      <label>Full name<input name="name" autocomplete="name" minlength="2" required></label>
-      <label>Email<input type="email" name="email" autocomplete="email" required></label>
-      <label>Phone<select data-phone-country="phone" name="phone_country" aria-label="Phone country"></select><input data-phone-number="phone" name="phone" autocomplete="tel" minlength="7" required></label>
-      <label>Password<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="200" required data-pw-meter aria-describedby="signupPwHelp"></label>
-      <small id="signupPwHelp" class="field-help">At least 12 characters. A few unrelated words make a strong, memorable password.</small>
-      <label>Confirm password<input type="password" name="password_confirm" autocomplete="new-password" required data-pw-confirm="password"></label>
-      <button class="btn" type="submit">Create account</button>
-      <button class="btn ghost" type="button" data-password-reset>Forgot password?</button>
-      <p class="form-status" role="status"></p>
-    </form>
-      <div class="sso" hidden data-google>
-        <div class="sso-divider"><span>or</span></div>
-        <a class="btn ghost sso-btn" href="/api/auth/google?next=portal">
-          <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true" focusable="false">
-            <path fill="#4285F4" d="M17.6 9.2c0-.6-.1-1.3-.2-1.9H9v3.5h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.7-3.9 2.7-6.5z"/>
-            <path fill="#34A853" d="M9 18c2.4 0 4.5-.8 6-2.2l-2.9-2.3c-.8.6-1.9.9-3.1.9-2.4 0-4.4-1.6-5.1-3.8H.9v2.3A9 9 0 0 0 9 18z"/>
-            <path fill="#FBBC05" d="M3.9 10.7a5.4 5.4 0 0 1 0-3.4V5H.9a9 9 0 0 0 0 8l3-2.3z"/>
-            <path fill="#EA4335" d="M9 3.6c1.3 0 2.5.5 3.4 1.3l2.6-2.6A9 9 0 0 0 .9 5l3 2.3C4.6 5.2 6.6 3.6 9 3.6z"/>
-          </svg>
-          Continue with Google
-        </a>
-      </div>
-    <p class="auth-switch">Already have an account? <button type="button" class="link-btn" data-auth-switch="signin">Sign in</button></p>
-  </div>
-</dialog>
 
 <!--ssr:bootstrap--><!--/ssr:bootstrap-->
 <script src="/app.js" type="module"></script>
