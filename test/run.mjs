@@ -25,6 +25,7 @@ const baseEnv = {
   // would only throttle the suite itself.
   AUTH_RATE_LIMIT: '100000',
   API_RATE_LIMIT: '100000',
+  UPLOAD_RATE_LIMIT: '100000',
 };
 
 const suites = fs.readdirSync(here).filter((f) => f.endsWith('.suite.mjs')).sort();

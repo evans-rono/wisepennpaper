@@ -22,7 +22,7 @@ const csrfToken = () =>
       throw e;
     }));
 
-export async function api(url, options = {}) {
+export async function api(url, options = {}, retried = false) {
   const method = (options.method || 'GET').toUpperCase();
   if (!SAFE_METHODS.has(method)) {
     options.headers = { ...(options.headers || {}), 'CSRF-Token': await csrfToken() };
@@ -33,6 +33,13 @@ export async function api(url, options = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 403) csrfPromise = null; // expired token: refetch on the next call
+    // The token is cached for the life of the page, so anything that changes
+    // the cookie underneath it — a restart, a long-open tab, a second tab that
+    // refreshed it — leaves the first write of the session failing. Clearing
+    // the cache and letting the *caller* try again is what made a button need
+    // pressing twice: the second press worked because the first one repaired
+    // the token. Do that repair here instead, once, and only for a stale token.
+    if (data.code === 'EBADCSRFTOKEN' && !retried) return api(url, options, true);
     const err = Error(data.error || 'Request failed');
     err.status = res.status;
     // Which input the message is about, when the server can say.

@@ -304,3 +304,42 @@
 .portal-loading { display: none; color: var(--muted); padding: 4rem 0; }
 [data-portal="signed-in"] #auth { display: none !important; }
 [data-portal="signed-in"] #portalLoading { display: block; }
+
+/* Headings inside a panel or a dialog. They inherit the marketing h2 scale
+   (up to 4.2rem), which made "Your details" and a quote reference larger than
+   the page's own h1 and left the form beneath them looking like an afterthought. */
+.panel h2, .modal-card h2 { font-size: 1.3rem; letter-spacing: -.01em; margin-top: 0; }
+
+/* ------------------------------------------------- portal on a wide screen
+   Two limits were compounding. The 1180px cap left 370px empty on each side of
+   a 1920px window, and the 5vw side padding grew with the viewport — 96px a
+   side at that width — so the readable column was only 988px. The cap now
+   scales, and the padding stops growing once there is plainly enough room. */
+.portal{max-width:min(1520px,94vw);padding-inline:clamp(1.25rem,5vw,3rem)}
+/* Account is two panels of form fields. Left to fill 700px each, a Name box
+   ends up wider than the sentence above it; the fields stay a sensible measure
+   and the panel keeps its own width. */
+.account-grid input,.account-grid select,.account-grid .field{max-width:32rem}
+
+/* ------------------------------------------------- registration on a wide screen
+   Sign-in has two fields; registration has six and a strength meter. Sized for
+   the shorter form, the card became a 424px ribbon about 970px tall beside a
+   920px column of prose — narrow, long, and surrounded by nothing. On a screen
+   with room, the card takes more of it and the short fields pair up. */
+@media (min-width: 1200px) {
+  /* An explicit track, not minmax(0, 40rem): as a ceiling the column still
+     sizes to its content, and the card stayed at its old narrow width. */
+  .auth-split.registering { grid-template-columns: minmax(0, 1fr) 40rem; }
+  /* styles.css loads first and caps .auth-card at 460px; width alone loses to
+     it, so the ceiling has to be lifted as well as the width set. */
+  .auth-split.registering .auth-card { width: 100%; max-width: 40rem; }
+  .registering #register { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.1rem; align-items: start; }
+  /* Name|Email, then phone across the full width because it carries a country
+     select as well as the number, then Password|Confirm — which belong beside
+     each other anyway. Headings, the button and the status line span. */
+  .registering #register > h2,
+  .registering #register > .auth-sub,
+  .registering #register > label:nth-of-type(3),
+  .registering #register > .btn,
+  .registering #register > .form-status { grid-column: 1 / -1; }
+}

@@ -42,6 +42,10 @@ function initAuthTabs() {
     tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.authTab === name)));
     el('#login').hidden = name !== 'login';
     el('#register').hidden = name !== 'register';
+    // Sign-in is two fields; registration is six plus a strength meter, and in a
+    // card sized for the shorter form it became a narrow ribbon a thousand
+    // pixels tall. The card widens and pairs its fields for that tab only.
+    el('.auth-split')?.classList.toggle('registering', name === 'register');
   };
   tabs.forEach((t) => t.addEventListener('click', () => show(t.dataset.authTab)));
   // /portal?new=1 comes from the "Create account" button on the public site.
@@ -85,6 +89,11 @@ const statTiles = (data) => {
   ].map(([label, value]) => `<div class="stat-tile"><strong>${esc(value)}</strong><span>${esc(label)}</span></div>`).join('');
 };
 
+// A status like "In progress" would land in the class attribute as two class
+// names, and `progress` is a real rule elsewhere in this stylesheet — it
+// collapsed the row to a sliver. Fold everything into one hyphenated name.
+const statusClass = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
 const projectCard = (p) => `<article class="panel project-card">
   <div class="card-head">
     <div><small>${esc(p.reference)}</small><h3>${esc(p.title)}</h3></div>
@@ -97,7 +106,7 @@ const projectCard = (p) => `<article class="panel project-card">
     <b>${esc(p.progress)}%</b>
   </div>
   ${p.milestones.length ? `<ul class="milestones">${p.milestones.map((m) =>
-    `<li class="${esc(String(m.status).toLowerCase())}">${esc(m.title)}<span>${esc(m.status)}</span></li>`).join('')}</ul>` : ''}
+    `<li class="${esc(statusClass(m.status))}">${esc(m.title)}<span>${esc(m.status)}</span></li>`).join('')}</ul>` : ''}
   <details class="thread">
     <summary>Project conversation<span class="count">${p.messages.length}</span></summary>
     <div class="message-thread">${p.messages.length
@@ -162,6 +171,12 @@ const renderInvoices = (rows) => el('#invoices').innerHTML = rows.length
   : empty('No invoices yet', 'Invoices raised against your projects appear here.');
 
 /* ---------------------------------------------------------- two-factor */
+const setTwoFactorState = (enabled) => {
+  const state = el('#twoFactorState');
+  state.textContent = enabled ? 'On' : 'Off';
+  state.className = 'status-line ' + (enabled ? 'on' : 'off');
+};
+
 async function renderSecurity() {
   const state = el('#twoFactorState');
   const area = el('#twoFactorArea');
@@ -172,8 +187,7 @@ async function renderSecurity() {
     state.textContent = 'Unavailable';
     return;
   }
-  state.textContent = status.enabled ? 'On' : 'Off';
-  state.className = 'status-line ' + (status.enabled ? 'on' : 'off');
+  setTwoFactorState(status.enabled);
 
   area.innerHTML = status.enabled
     ? `<form id="recoveryForm" class="inline-form">
@@ -242,6 +256,9 @@ async function startTwoFactorSetup() {
     const res = await submitForm(form, () => postJson('/api/auth/2fa/enable', { code: form.code.value }),
       'Checking the code…');
     if (!res) return form.code.select();
+    // The codes replace the whole panel, so the summary line above it has to be
+    // corrected here; it would otherwise still read "Off" beside them.
+    setTwoFactorState(true);
     showRecoveryCodes(res.recoveryCodes, 'Two-step verification is on');
   });
 }

@@ -264,14 +264,6 @@ const TABS = {
         ${field('address', 'Location')}
         ${field('hours', 'Working hours')}
 
-        <h2>Homepage statistics</h2>
-        <p class="field-help">Leave a figure blank to hide it. If all five are blank the whole band is hidden, which is the right state until you have verified numbers.</p>
-        ${field('books_published', 'Books published')}
-        ${field('authors_supported', 'Authors supported')}
-        ${field('projects_completed', 'Projects completed')}
-        ${field('years_experience', 'Years of experience')}
-        ${field('organisations_served', 'Organisations served')}
-
         <button class="btn" type="submit">Save site details</button>
         <p class="form-status" role="status"></p>
       </form>`;
@@ -319,7 +311,8 @@ const TABS = {
           <td class="row-actions">
             ${String(u.id) === String(me.id) ? '<small class="muted">—</small>' : `
               <button type="button" class="btn ghost small" data-toggle-active="${esc(u.id)}" data-active="${u.is_active ? '1' : '0'}">${u.is_active ? 'Deactivate' : 'Reactivate'}</button>
-              ${u.two_factor ? `<button type="button" class="btn ghost small" data-reset-2fa="${esc(u.id)}">Reset 2FA</button>` : ''}`}
+              ${u.two_factor ? `<button type="button" class="btn ghost small" data-reset-2fa="${esc(u.id)}">Reset 2FA</button>` : ''}
+              <button type="button" class="btn ghost small danger" data-delete-user="${esc(u.id)}" data-name="${esc(u.name)}">Delete</button>`}
             <small class="row-status" role="status"></small>
           </td>
         </tr>`).join(''))}`;
@@ -348,6 +341,15 @@ const TABS = {
       b.addEventListener('click', rowAction(b, () => {
         if (!confirm('Clear this person\'s two-step verification? They will set it up again on their next sign-in.')) throw Error('Cancelled');
         return postJson('/api/admin/users/' + b.dataset.reset2fa + '/reset-2fa', {});
+      })));
+
+    // Deleting is for accounts that should never have existed. The server
+    // refuses one that is attached to real work and says what is holding it,
+    // which is a more useful answer than a warning here could be.
+    panel.querySelectorAll('[data-delete-user]').forEach((b) =>
+      b.addEventListener('click', rowAction(b, () => {
+        if (!confirm(`Delete ${b.dataset.name}'s account? This cannot be undone.\n\nIf they have done any work here, deactivate them instead — that blocks sign-in immediately and keeps the records.`)) throw Error('Cancelled');
+        return api('/api/admin/users/' + b.dataset.deleteUser, { method: 'DELETE' });
       })));
 
     panel.querySelectorAll('[data-role]').forEach((sel) => {
@@ -424,7 +426,7 @@ const TABS = {
 const CONTENT_TYPES = {
   portfolio: {
     title: 'Portfolio', noun: 'project',
-    empty: 'No projects published yet. Anything added here appears in the Selected work section.',
+    empty: 'No projects recorded yet. These are kept for your own reference — the public site no longer has a Selected work section.',
     fields: [
       { name: 'title', label: 'Project title', required: true, inTable: true },
       { name: 'client', label: 'Client', inTable: true },
@@ -438,7 +440,7 @@ const CONTENT_TYPES = {
   },
   testimonials: {
     title: 'Testimonials', noun: 'testimonial',
-    empty: 'No testimonials yet. Only published ones appear on the homepage.',
+    empty: 'No testimonials yet. These are kept for your own reference — the public site no longer has a Client voices section.',
     fields: [
       { name: 'client_name', label: 'Client name', required: true, inTable: true },
       { name: 'organisation', label: 'Organisation', inTable: true },
@@ -673,7 +675,9 @@ quoteModal.addEventListener('click', (e) => { if (e.target === quoteModal) quote
 async function openQuote(id) {
   const detail = $('#quoteDetail');
   detail.innerHTML = '<p class="loading">Loading…</p>';
-  quoteModal.showModal();
+  // Re-entrant: attaching an account re-renders the drawer in place, and
+  // showModal() throws InvalidStateError on a dialog that is already open.
+  if (!quoteModal.open) quoteModal.showModal();
   let q;
   try {
     q = await api('/api/admin/quotes/' + id);
@@ -706,12 +710,36 @@ async function openQuote(id) {
           <small>${esc(f.mime_type)} · ${esc(kb(f.size))}</small></li>`).join('')}</ul>`
       : '<p class="muted">No files were attached.</p>'}
 
+    <h3>Client account</h3>
+    <p class="muted">${q.user_id
+      ? `Visible in the portal of <b>${esc(q.client_name)}</b> (${esc(q.client_email)}).`
+      : 'Not attached to any account, so nobody can see it in the portal. Anyone can type any email address into the public form, so this link is made by staff, never matched automatically.'}</p>
+    <form id="quoteLinkForm" class="inline-form">
+      <label>Client's account email<input type="email" name="client_email"
+        value="${esc(q.client_email || '')}" placeholder="them@example.com"></label>
+      <button class="btn ghost" type="submit">${q.user_id ? 'Update link' : 'Attach to account'}</button>
+      <p class="form-status" role="status"></p>
+    </form>
+
     <form id="quoteNotesForm">
       <label>Internal notes<textarea name="admin_notes" rows="4"
         placeholder="Visible to staff only.">${esc(q.admin_notes || '')}</textarea></label>
       <button class="btn" type="submit">Save notes</button>
       <p class="form-status" role="status"></p>
     </form>`;
+
+  const link = $('#quoteLinkForm');
+  link.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const address = link.client_email.value.trim();
+    const res = await submitForm(link,
+      () => patchJson('/api/admin/quotes/' + q.id, { status: q.status, client_email: address }),
+      address ? 'Attaching…' : 'Detaching…');
+    if (res) {
+      setStatus(link, address ? 'Attached. It now appears in their portal.' : 'Detached.');
+      openQuote(q.id);
+    }
+  });
 
   const notes = $('#quoteNotesForm');
   notes.addEventListener('submit', async (e) => {

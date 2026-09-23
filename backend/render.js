@@ -1,7 +1,7 @@
 // Server-side rendering for the public pages.
 //
 // The site used to ship an empty shell and let the browser fetch services,
-// portfolio, FAQs and contact details after load. That made the real content
+// FAQs and contact details after load. That made the real content
 // invisible to crawlers, put "Loading…" in the first paint, and left the page
 // dead without JavaScript. Templates in frontend/ now carry <!--ssr:name--> …
 // <!--/ssr:name--> slots that this module fills before the HTML goes out.
@@ -15,11 +15,27 @@ const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]);
 
+// The wordmark used to arrive through <use href="/logo.svg#logo">, a reference
+// into a separate file. WebKit has never supported that, so on Safari, iPhone
+// and iPad the header had a hole in it where the logo should be. The symbol is
+// inlined into every page instead, leaving <use href="#logo"> as a reference
+// within the same document, which every browser resolves. The artwork itself
+// still lives in exactly one place: frontend/logo.svg, read once from here.
+let sprite;
+function logoSprite() {
+  if (process.env.NODE_ENV === 'production' && sprite !== undefined) return sprite;
+  const file = fs.readFileSync(path.join(PUBLIC, 'logo.svg'), 'utf8');
+  const symbol = file.match(/<symbol[\s\S]*?<\/symbol>/)?.[0] ?? '';
+  sprite = `<svg class="svg-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">${symbol}</svg>`;
+  return sprite;
+}
+
 const templates = new Map();
 function template(name) {
   // Cached in production, re-read in development so edits show up on refresh.
   if (process.env.NODE_ENV === 'production' && templates.has(name)) return templates.get(name);
-  const html = fs.readFileSync(path.join(PUBLIC, name), 'utf8');
+  const html = fs.readFileSync(path.join(PUBLIC, name), 'utf8')
+    .replace(/<body[^>]*>/, (openTag) => openTag + logoSprite());
   templates.set(name, html);
   return html;
 }
@@ -148,22 +164,7 @@ function pageHead(base, { title, description, urlPath, robots, jsonLd }) {
 /* ---------------------------------------------------------------- content */
 
 const SERVICE_ICONS = ['✎', '✓', '▤', '▦', '◈', '▥', '✦', '◎'];
-const STAT_LABELS = {
-  books_published: 'Books Published',
-  authors_supported: 'Authors Supported',
-  projects_completed: 'Projects Completed',
-  years_experience: 'Years of Experience',
-  organisations_served: 'Organisations Served',
-};
 
-const statsBand = (s) => {
-  const cells = Object.entries(STAT_LABELS)
-    .filter(([key]) => s[key])
-    .map(([key, label]) => `<div><strong>${esc(s[key])}</strong><span>${esc(label)}</span></div>`);
-  // Deliberately absent until real figures are published, rather than shown as
-  // placeholder dashes.
-  return cells.length ? `<section class="stats" aria-label="Business statistics">${cells.join('')}</section>` : '';
-};
 
 const serviceCards = (rows) =>
   rows.length
@@ -178,26 +179,10 @@ const serviceCards = (rows) =>
 const serviceOptions = (rows) =>
   rows.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
 
-const portfolioCards = (rows) => {
-  const empty = rows.length
-    ? '<p class="muted portfolio-empty" hidden>No published projects in this category yet.</p>'
-    : '<p class="muted portfolio-empty">Selected projects will appear here soon.</p>';
-  return rows.map((x) => `<article class="project" data-category="${esc(x.category)}">
-      <small>${esc(x.category)}</small>
-      <h3>${esc(x.title)}</h3>
-      <p>${esc(x.description)}</p>
-      <b>${esc(x.client || 'Wise Pen project')}</b>
-    </article>`).join('') + empty;
-};
+// Every section that can come up empty says so the same way: a card, matching
+// the services and resources blocks. A bare grey line under a full-width
+// heading read like a section that had failed to load.
 
-const testimonialCards = (rows) =>
-  rows.length
-    ? rows.map((t) => `<article class="quote">
-        <div class="stars" aria-label="${esc(t.rating)} out of 5">${'★'.repeat(Math.max(0, Math.min(5, t.rating | 0)))}</div>
-        <p>“${esc(t.testimonial)}”</p>
-        <b>${esc(t.client_name)}</b><small>${esc(t.organisation || '')}</small>
-      </article>`).join('')
-    : '<p>Client feedback will appear here soon.</p>';
 
 const faqItems = (rows) =>
   rows.map((f) => `<details><summary>${esc(f.question)}</summary><p>${esc(f.answer)}</p></details>`).join('');
@@ -238,11 +223,8 @@ export function renderHome(req) {
 
   return fill(template('index.html'), {
     head: homeHead(base, s, rows.map((x) => x.name)),
-    stats: statsBand(s),
     services: serviceCards(rows),
     serviceOptions: serviceOptions(rows),
-    portfolio: portfolioCards(db.prepare('SELECT * FROM portfolio ORDER BY featured DESC,completion_date DESC').all()),
-    testimonials: testimonialCards(db.prepare('SELECT * FROM testimonials WHERE published=1 ORDER BY id DESC').all()),
     faqs: faqItems(db.prepare('SELECT * FROM faqs WHERE published=1 ORDER BY sort_order').all()),
     blog: blogCards(db.prepare(`SELECT b.*,c.name category FROM blog_posts b
       LEFT JOIN categories c ON c.id=b.category_id
@@ -340,6 +322,8 @@ export function renderPortal(req) {
     .replace('data-portal="signed-out"', `data-portal="${signedIn ? 'signed-in' : 'signed-out'}"`);
 }
 
+export const renderReset = () => template('reset.html');
+
 export function renderNotFound(req) {
   const main = `<article class="section text-page">
     <p class="eyebrow">Error 404</p>
@@ -354,6 +338,117 @@ export function renderNotFound(req) {
     description: 'The page you requested could not be found.',
     urlPath: req.originalUrl.split('?')[0],
     robots: 'noindex,follow',
+  }), main);
+}
+
+// Kenya's Data Protection Act 2019 requires that people are told what is done
+// with their data before they consent, and the quote form asks for consent
+// against nothing they can read. The contact details come from the settings
+// table rather than being written in here, so the notice cannot drift away from
+// what the rest of the site says. The retention periods and the controller's
+// identity are business decisions: review them, and take legal advice before
+// relying on this as your published policy.
+export function renderPrivacy(req) {
+  const s = settings();
+  const contact = [
+    s.email && `<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`,
+    s.phone && esc(s.phone),
+    s.address && esc(s.address),
+  ].filter(Boolean).join(' &middot; ');
+
+  const main = `<div class="text-layout">
+    <nav class="page-toc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#who-is-responsible">Who is responsible</a></li>
+        <li><a href="#what-we-collect-and-why">What we collect, and why</a></li>
+        <li><a href="#manuscripts-and-other-files">Manuscripts and other files</a></li>
+        <li><a href="#who-else-sees-it">Who else sees it</a></li>
+        <li><a href="#cookies">Cookies</a></li>
+        <li><a href="#how-long-we-keep-it">How long we keep it</a></li>
+        <li><a href="#your-rights">Your rights</a></li>
+        <li><a href="#keeping-it-secure">Keeping it secure</a></li>
+        <li><a href="#changes">Changes</a></li>
+      </ol>
+    </nav>
+    <article class="section text-page">
+    <p class="eyebrow">Privacy</p>
+    <h1>How we handle your information</h1>
+    <p class="lead">This notice explains what ${esc(s.company_name || ORG_NAME)} collects when you use this
+      website, why we hold it, and what you can ask us to do with it. It is written to meet our obligations
+      under Kenya's Data Protection Act, 2019.</p>
+
+    <h2 id="who-is-responsible">Who is responsible</h2>
+    <p>${esc(s.company_name || ORG_NAME)} is the data controller for the information described here.
+      You can reach us at ${contact || 'the contact details published on this site'}.</p>
+
+    <h2 id="what-we-collect-and-why">What we collect, and why</h2>
+    <ul>
+      <li><b>Project enquiries.</b> Your name, email address, telephone number, and optionally your
+        organisation and location, together with the project details you describe and any manuscript or
+        artwork you attach. We use these to assess the work, prepare a quotation and reply to you.</li>
+      <li><b>Consultation bookings.</b> Your name, contact details, the type of consultation and your
+        preferred date and time, so that we can arrange the appointment.</li>
+      <li><b>Messages.</b> Anything you send through the contact form, so that we can answer it.</li>
+      <li><b>Accounts.</b> If you create a client account, your name, email address, telephone number and a
+        password we never store in readable form. Signed-in clients can also exchange messages with us about
+        their project.</li>
+      <li><b>Security records.</b> Sign-in times, the IP address a request came from, and the browser
+        reported by your device. These let us detect unauthorised access to accounts and are kept separate
+        from the project work itself.</li>
+    </ul>
+    <p>We ask for consent before you submit an enquiry. Where you are already a client, we also rely on the
+      performance of our agreement with you, and on our own legal obligations for records such as invoices.</p>
+
+    <h2 id="manuscripts-and-other-files">Manuscripts and other files</h2>
+    <p>Work you upload stays private to you and the staff handling your project. Files are stored under
+      names generated by our server, outside the publicly reachable part of the site, and are never listed or
+      linked publicly. Downloading one requires signing in, and we record who downloaded what and when.</p>
+
+    <h2 id="who-else-sees-it">Who else sees it</h2>
+    <p>We do not sell your information, and we do not share it for advertising. This site runs no analytics
+      or advertising trackers, and sets no third-party cookies. Information is disclosed only to the people
+      working on your project, to service providers who host this site or carry our email, and where the law
+      requires it. Typefaces are loaded from Google Fonts, which means your browser contacts Google's servers
+      when a page loads.</p>
+
+    <h2 id="cookies">Cookies</h2>
+    <p>We use two, both strictly necessary and neither used for tracking: one keeps you signed in, and one
+      protects forms against cross-site request forgery. Your choice of light or dark theme is remembered in
+      your own browser and never reaches us.</p>
+
+    <h2 id="how-long-we-keep-it">How long we keep it</h2>
+    <p>Enquiries and their attachments are kept for as long as we are in discussion with you and for a
+      reasonable period afterwards, in case the project resumes. Client project records, invoices and
+      quotations are kept for as long as our business and tax obligations require. Security records are kept
+      only as long as they are useful for investigating account misuse. You can ask us to delete anything we
+      are not legally required to keep.</p>
+
+    <h2 id="your-rights">Your rights</h2>
+    <p>Under the Data Protection Act you may ask us for a copy of the information we hold about you, ask us
+      to correct anything inaccurate, ask us to delete it, object to a particular use, or withdraw a consent
+      you gave earlier. Withdrawing consent does not affect anything done before you withdrew it. Write to us
+      using the details above and we will respond within the statutory period. If you are not satisfied with
+      our answer, you may complain to the Office of the Data Protection Commissioner.</p>
+
+    <h2 id="keeping-it-secure">Keeping it secure</h2>
+    <p>The site is served over HTTPS. Passwords are stored only as irreversible hashes, staff accounts
+      require a second factor in addition to a password, uploaded files are checked against their real format
+      before being stored, and access to client records is restricted by role and recorded.</p>
+
+    <h2 id="changes">Changes</h2>
+    <p>If this notice changes materially we will say so on this page. Please check it when you submit
+      something new.</p>
+
+    <p class="page-actions"><a class="btn" href="/">Back to the homepage</a>
+      <a class="btn ghost" href="/#contact">Contact us</a></p>
+    </article>
+  </div>`;
+
+  return shell(req, pageHead(baseUrl(req), {
+    title: `Privacy notice | ${ORG_NAME}`,
+    description: `How ${ORG_NAME} collects, uses and protects the information you provide through this site.`,
+    urlPath: '/privacy',
   }), main);
 }
 

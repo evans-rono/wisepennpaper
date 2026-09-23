@@ -7,9 +7,13 @@
     "dev": "node --watch backend/server.js",
     "start": "node backend/server.js",
     "seed": "node backend/seed.js",
+    "seed:samples": "node backend/seed-samples.js",
+    "backup": "node backend/backup.js",
+    "prune:uploads": "node backend/prune-uploads.js",
     "mail:test": "node backend/mailtest.js",
     "reset:test": "node backend/resettest.js",
     "env:check": "node backend/envcheck.js",
+    "admin:check": "node backend/admincheck.js",
     "test": "node test/run.mjs",
     "audit": "npm audit --audit-level=critical",
     "db:migrate": "node backend/db.js"

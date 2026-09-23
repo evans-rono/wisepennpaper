@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../backend/server.js';
+import db from '../backend/db.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -24,7 +25,7 @@ ok('twitter card present', h.includes('name="twitter:card"'));
 ok('JSON-LD has telephone + hours', h.includes('"telephone"') && h.includes('"openingHours"'));
 ok('no meta keywords', !h.includes('name="keywords"'));
 ok('favicon linked', h.includes('rel="icon" href="/favicon.svg"'));
-ok('stats band hidden (none seeded)', !h.includes('class="stats"'));
+ok('no statistics band', !h.includes('class="stats"'));
 ok('bootstrap json present', h.includes('id="bootstrap"'));
 ok('csrf hidden field in all 3 forms', (h.match(/name="_csrf"/g) || []).length === 3);
 ok('all ssr slots filled', !h.includes('<!--ssr:'));
@@ -35,7 +36,41 @@ ok('dialogs are <dialog>', (h.match(/<dialog class="modal"/g) || []).length === 
 ok('no duplicate auth dialog', !h.includes('id="signinModal"') && !h.includes('id="signupModal"'));
 ok('sign in points at the portal', h.includes('id="authNav"'));
 ok('no inline style attributes', !/ style="/.test(h));
-ok('portfolio empty state present', h.includes('portfolio-empty'));
+ok('no selected-work section', !h.includes('id="portfolio"') && !h.includes('data-filter'));
+ok('no client-voices section', !h.includes('id="testimonials"') && !h.includes('Client voices'));
+
+ok('no public link to the staff entrance', !h.includes('href="/admin"'));
+ok('the privacy notice is linked', h.includes('href="/privacy"'));
+ok('the consent checkbox points at it', /name="consent"[\s\S]{0,220}href="\/privacy"/.test(h));
+ok('every public form carries a honeypot', (h.match(/name="wpnp_check"/g) || []).length === 3);
+// The honeypot alone must not be named anything a browser or password manager
+// fills by itself — a filled one silently discards the enquiry. Visible fields
+// like "organisation" are supposed to autofill, so only the trap is checked.
+const honeypotNames = [...h.matchAll(/<div class="hp"[\s\S]*?name="([^"]+)"/g)].map((m) => m[1]);
+ok('the honeypot name means nothing to autofill',
+  honeypotNames.length === 3 && honeypotNames.every((n) =>
+    !/^(website|url|company|organization|organisation|fax|nickname|username|name|email|tel|phone)$/.test(n)),
+  honeypotNames.join(', '));
+
+// ---------- privacy notice ----------
+const privacy = await agent.get('/privacy');
+ok('GET /privacy is 200', privacy.status === 200, String(privacy.status));
+ok('privacy slots filled', !privacy.text.includes('<!--ssr:'));
+ok('privacy names the Act', privacy.text.includes('Data Protection Act'));
+ok('privacy carries the real contact address', privacy.text.includes('mailto:'));
+ok('privacy is canonical and indexable',
+  privacy.text.includes('/privacy"') && !privacy.text.includes('noindex'));
+ok('sitemap lists the privacy notice', (await agent.get('/sitemap.xml')).text.includes('/privacy'));
+// A nine-section notice is three screens long; the contents list uses the
+// margin the reading measure deliberately leaves rather than widening the prose.
+const headingIds = [...privacy.text.matchAll(/<h2 id="([a-z0-9-]+)"/g)].map((m) => m[1]);
+const tocLinks = [...privacy.text.matchAll(/<li><a href="#([a-z0-9-]+)">/g)].map((m) => m[1]);
+ok('every privacy section has an id', headingIds.length === 9, String(headingIds.length));
+ok('the contents list covers all of them',
+  tocLinks.length === headingIds.length && tocLinks.every((id, i) => id === headingIds[i]),
+  `${tocLinks.length} links vs ${headingIds.length} headings`);
+ok('the prose and the contents list are siblings, not nested',
+  privacy.text.includes('<div class="text-layout">'));
 
 // ---------- service pages ----------
 const slug = (await agent.get('/api/services')).body[0].slug;
@@ -85,6 +120,31 @@ ok('JSON contact post succeeds', contact.status === 201, JSON.stringify(contact.
 const noToken = await request(app).post('/api/contact')
   .send({ name: 'xx', email: 'a@b.co', subject: 'yyy', message: 'zzzzzzzzzzzz' });
 ok('contact without csrf is rejected', noToken.status === 403, String(noToken.status));
+// Named so the browser can tell a stale token from "you may not do that", fetch
+// a fresh one and retry — otherwise the first click of a long-open page fails
+// and only the second works, which is what a sign-out button pressed twice is.
+ok('a rejected token says why, in a form script can act on',
+  noToken.body.code === 'EBADCSRFTOKEN', JSON.stringify(noToken.body));
+const wrongToken = await agent.post('/api/contact').set('CSRF-Token', 'not-a-real-token')
+  .send({ name: 'xx', email: 'a@b.co', subject: 'yyy', message: 'zzzzzzzzzzzz' });
+ok('so does a malformed one', wrongToken.status === 403 && wrongToken.body.code === 'EBADCSRFTOKEN',
+  `${wrongToken.status} ${JSON.stringify(wrongToken.body)}`);
+ok('an ordinary refusal is not labelled as a token problem',
+  !(await request(app).get('/api/admin/dashboard')).body.code);
+
+// ---------- honeypot ----------
+// A bot fills every field it finds, including the one placed off-screen. The
+// response has to look like success, or whoever wrote the script simply learns
+// which field to skip.
+const before = db.prepare("SELECT COUNT(*) n FROM contact_messages").get().n;
+const hpToken = (await agent.get('/api/csrf')).body.csrfToken;
+const trap = await agent.post('/api/contact').set('CSRF-Token', hpToken).send({
+  name: 'Spam Bot', email: 'bot@example.com', subject: 'Cheap offers',
+  message: 'A message body long enough to pass validation.', wpnp_check: 'http://spam.example',
+});
+ok('a filled honeypot still answers as success', trap.status === 201, String(trap.status));
+ok('but nothing was stored',
+  db.prepare("SELECT COUNT(*) n FROM contact_messages").get().n === before);
 
 // ---------- no-JS form post (browser Accept header) ----------
 const htmlAgent = request.agent(app);

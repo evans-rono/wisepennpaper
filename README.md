@@ -4,8 +4,8 @@ A full-stack publishing website, lead-management system, secure client portal an
 
 ## Included
 
-- Responsive public website with services, process, project portfolio, testimonials, client categories, resources, FAQs, contact and CTAs
-- Server-rendered public pages: services, portfolio, testimonials, FAQs, articles, statistics and contact details are in the delivered HTML, so they are crawlable and readable before any script runs
+- Responsive public website with services, process, client categories, resources, FAQs, contact and CTAs
+- Server-rendered public pages: services, FAQs, articles and contact details are in the delivered HTML, so they are crawlable and readable before any script runs
 - Indexable service pages at `/services/<slug>`, listed in the sitemap, with per-service metadata and `Service` + `BreadcrumbList` structured data
 - Progressive enhancement: the quote, contact and consultation forms post natively and confirm on a server-rendered page when JavaScript is unavailable
 - Database-backed service catalogue and site-wide search
@@ -13,18 +13,21 @@ A full-stack publishing website, lead-management system, secure client portal an
 - Contact and consultation booking workflows
 - Client registration, login, project progress, milestones, quote, appointment and invoice views
 - Staff dashboard: business metrics, quote requests with full detail and downloadable attachments, internal notes, appointment and enquiry status management, an activity log for administrators, and paging throughout
-- Content management for everything the public site shows: services, portfolio, testimonials, FAQs and articles, plus a Site details screen for contact information and the homepage statistics. Nothing on the public site now requires hand-written SQL to change
-- Team management: add colleagues, set roles, deactivate someone who leaves, and clear a lost second factor. Guarded against self-demotion, self-deactivation, privilege escalation by an admin, and removing the last super admin
+- Content management for everything the public site shows: services, FAQs and articles, plus a Site details screen for contact information. Projects and testimonials are still recorded under their own tabs, though the site no longer has a Selected work or Client voices section to show them in. Nothing on the public site now requires hand-written SQL to change
+- Team management: add colleagues, set roles, deactivate someone who leaves, clear a lost second factor, and delete an account that should never have existed. Guarded against self-demotion, self-deactivation, privilege escalation by an admin, and removing the last super admin. Deletion refuses any account that projects, messages, quotes, files or articles hang off, names what is holding it, and points at deactivation instead — so the records a client relies on cannot be destroyed by tidying up staff. Deleting or reactivating also clears the brute-force counters, which are keyed on the email address rather than by foreign key and would otherwise outlive the account and refuse the same person when they return
 - Two-step verification for staff sign-in (TOTP, RFC 6238) with QR enrolment, single-use recovery codes, replay protection, and "sign out everywhere else". Required for `admin` and `super_admin`: those accounts cannot reach any data until enrolled, and cannot switch it back off
 - Optional Sign in with Google (OpenID Connect authorisation-code flow with PKCE, server-side so no third-party script is loaded). Verified email required, optional Workspace domain restriction, and it never creates a staff account
 - Relational data model for users, clients, services, quotes, projects, milestones, files, appointments, portfolio, testimonials, blog, FAQs, messages, notifications, quotations, invoices, settings and audit logs
 - Role-aware API protection, signed double-submit CSRF tokens, security headers (CSP without `unsafe-inline`, Permissions-Policy, COOP/CORP, HSTS, strict referrer policy), validation, sanitisation, upload size limits and audit logging
-- Uploads are accepted on their contents, not their claimed type: every file is checked against its format signature after it lands, stored under a server-generated name with the verified extension, and deleted if it is not a genuine PDF, Word, JPG or PNG
-- Rate limiting sized to stop automated abuse without touching ordinary use: signed-in users are exempt from the general limiter, only failed sign-ins count towards the credential limiter, and both ceilings are env-overridable
+- Uploads are accepted on their contents, not their claimed type: every file is checked against its format signature after it lands, stored under a server-generated name with the verified extension, and deleted if it is not a genuine PDF, Word, JPG or PNG. Word documents are additionally scanned for macro storage, since a signature check cannot tell a .docx from a .docm renamed to look like one
+- Client portal authorisation is keyed on the account, never on the address it claims. An email is a name, not a credential: quotes and appointments used to be matched by address as well as account id, which meant registering as someone@theirfirm.co.ke handed you their enquiry and the manuscript attached to it. Staff attach an anonymous enquiry to an account deliberately, from the quote drawer
+- Rate limiting sized to stop automated abuse without touching ordinary use: staff are exempt from the general limiter and signed-in clients get a raised ceiling, only failed sign-ins count towards the credential limiter, quote submissions carry their own hourly cap because they accept attachments from anyone, and every ceiling is env-overridable
 - Password handling built to NIST SP 800-63B: bcrypt over a SHA-256 pre-hash (so passphrases are not silently truncated at bcrypt's 72-byte limit), a 12-character minimum with screening against common passwords, keyboard runs and the user's own name, email and the site's name, constant-cost verification that does not reveal whether an account exists, per-account backoff on repeated failures, session regeneration on sign-in, registration and password change, and an authenticated change-password flow
 - Optional Have I Been Pwned breach screening (`PWNED_CHECK=on`), using the k-anonymity range API so the password never leaves the server
 - Sessions and brute-force counters are stored in SQLite, so a restart or deploy no longer signs everyone out — and no longer clears an attacker's lockout
 - No third-party runtime dependencies for CSRF, TOTP or QR generation; each is implemented against its specification in `backend/`
+- A privacy notice at `/privacy` written against Kenya's Data Protection Act, 2019, rendered from the same settings the rest of the site uses and linked from the footer and the consent checkbox
+- Public forms carry an off-screen honeypot field: submissions that fill it are answered as though they succeeded and silently discarded, which costs visitors nothing and tells a spam script nothing
 - SEO metadata, Open Graph and Twitter cards, JSON-LD, sitemap, robots rules and real 404 responses for unknown paths
 - Accessibility work: native `<dialog>` modals with focus trapping, AA-conformant text contrast in both themes, keyboard-only focus rings, reduced-motion support and a print stylesheet
 - Light and dark themes: follows the operating system by default, with a toggle that overrides it and is remembered per browser
@@ -68,28 +71,28 @@ The seed command prints the configured admin account. Change the temporary passw
 
 ## Production checklist
 
-1. Replace the sample contact details and add real statistics from the dashboard's **Site details** tab.
+1. Replace the sample contact details from the dashboard's **Site details** tab.
 2. Replace `frontend/og-image.png` (1200×630), `frontend/favicon.svg` and `frontend/apple-touch-icon.png` with final brand artwork. The supplied files are built from the site's own palette and wordmark, not from a brand guideline.
-3. Add verified portfolio projects, testimonials and original articles from the dashboard. The build intentionally does not invent customer claims.
+3. Add original articles from the dashboard. The build intentionally does not invent customer claims; `npm run seed:samples` adds clearly-labelled placeholders for review, and `-- --remove` takes them out again.
 4. Configure SMTP variables for live email notifications.
-5. Set a strong `ADMIN_PASSWORD` and re-run the seed; the seed prints a warning if the configured one would fail the policy applied to client accounts.
+5. Set a strong `ADMIN_PASSWORD` and re-run the seed; the seed prints a warning if the configured one would fail the policy applied to client accounts. It is the live super-admin credential, not a setup value, and it sits in the host's environment in plain text — treat anyone with panel access as holding it. If the account already exists with a different password the seed leaves it alone; `ADMIN_PASSWORD_ROTATE=on` forces a reset.
 6. Consider enabling `PWNED_CHECK=on` so new passwords are screened against known breaches. Review the outbound call to api.pwnedpasswords.com against your own data-handling policy first.
 7. Set `TRUST_PROXY` to the number of reverse proxies actually in front of the app. It defaults to 1; too high and a caller can spoof their address via `X-Forwarded-For`, which is what rate limiting and audit logs key on.
-8. Tune `API_RATE_LIMIT` and `AUTH_RATE_LIMIT` for your traffic. The defaults are deliberately far above human usage and exist only to blunt automated abuse.
-9. Use HTTPS and a reverse proxy. Set `NODE_ENV=production`, `BASE_URL`, and a long random `SESSION_SECRET`.
+8. Tune `API_RATE_LIMIT`, `AUTH_RATE_LIMIT` and `UPLOAD_RATE_LIMIT` for your traffic. The defaults are deliberately far above human usage and exist only to blunt automated abuse. Staff are exempt from the first and third; signed-in clients are not, since registration is open and would otherwise be a way around them.
+9. Use HTTPS and a reverse proxy. Set `NODE_ENV=production`, `BASE_URL`, and a long random `SESSION_SECRET`. In production the app redirects plain HTTP to HTTPS itself (`FORCE_HTTPS=off` to defer to a proxy that already does): session and CSRF cookies are `Secure`, so a visitor arriving over `http://` sends a password in clear text and then cannot sign in anyway.
 10. Sessions are stored in SQLite and survive restarts. For several instances, point `DB_PATH` at shared storage or move the store to Redis.
-11. Configure `MALWARE_SCAN=clamav` (the production Docker image includes ClamAV) and keep its signature database current. Uploads are scanned after signature verification and before they are moved to permanent local or object storage.
+11. Configure `MALWARE_SCAN=clamav` (the production Docker image includes ClamAV) and keep its signature database current. Uploads are scanned after signature verification and before they are moved to permanent local or object storage. If the named scanner is not installed the app refuses to start and says so, rather than failing one upload at a time; on hosting that scans the filesystem out of band, set `MALWARE_SCAN=off` deliberately and the boot log will record that uploads are unscanned.
 12. For object storage, set `STORAGE_DRIVER=s3` plus `S3_BUCKET`, credentials, and an optional `S3_ENDPOINT` for R2 or another S3-compatible provider. Buckets must be private; downloads remain authorized by the application.
 13. Configure SMTP for password recovery and new-device/IP sign-in alerts. Reset tokens are random, stored only as SHA-256 hashes, single-use, and expire after `PASSWORD_RESET_TTL_MINUTES`.
 14. Move SQLite to PostgreSQL for high concurrency or multi-instance hosting. New persistence code uses `backend/repository.js`; keep parameterised queries and add PostgreSQL migrations before switching `DB_DIALECT`.
-15. Add backups, uptime monitoring, central logs and dependency vulnerability scanning. CI runs `npm audit --audit-level=critical` and fails on critical advisories.
-14. Verify company address, telephone, email, hours, real statistics, legal pages, privacy notice, cookie requirements and Google Maps consent before launch.
+15. Schedule `npm run backup` (see **Backups and housekeeping**), plus uptime monitoring, central logs and dependency vulnerability scanning. CI runs `npm audit --audit-level=critical` and fails on critical advisories.
+14. Read `/privacy` end to end and correct it. It describes what the code actually does, but the retention periods and the controller's identity are your business decisions, and it has not been reviewed by a lawyer. Verify company address, telephone, email, hours, legal pages, cookie requirements and Google Maps consent before launch.
 15. Run accessibility, browser, responsive, Core Web Vitals and penetration testing against the deployed environment.
 
 ## Important implementation notes
 
 - No third-party benchmark copy, images or text are included.
-- Empty portfolio, testimonial and blog states are deliberate. Publish verified business content through the dashboard rather than fabricating it.
+- The empty resources state is deliberate. Publish verified business content through the dashboard rather than fabricating it.
 - The core flows are implemented. Extended back-office screens for every database entity can be added without changing the underlying model.
 - For production, pin reviewed dependency versions in a generated lockfile and run `npm audit` in CI.
 - CSRF is implemented in `backend/security.js` rather than with `csurf`, which is archived upstream and no longer receives fixes. It is the signed double-submit cookie pattern: an httpOnly, HMAC-signed cookie plus the same token echoed in a header or form field, so a party who can only write cookies for the domain still cannot mint a valid pair.
@@ -137,6 +140,84 @@ Redeploying is: upload changed files, run NPM Install if dependencies moved,
 then Restart. Shared hosts often block outbound SMTP to other providers; see the
 mail notes in `.env.example` if Gmail times out.
 
+### Without SSH or a terminal
+
+Every step above has a button equivalent, so a plan with no shell can still run
+the whole deployment. Nothing here is a workaround; these are the same commands,
+started from the panel instead of a prompt.
+
+**Uploading.** Build a zip of the project without `node_modules`, `.env`, the
+database files or `.git`, then cPanel > **File Manager** > Upload, and
+**Extract** it into the application root. `node_modules` is excluded on purpose:
+`better-sqlite3` is a compiled binary and the copy built on your machine will
+not necessarily match the host's Node build. The server installs its own.
+
+The alternative is cPanel > **Git Version Control**: give it the repository URL,
+set the checkout path to the application root, and afterwards each deploy is the
+**Update from Remote** button. Worth the setup if this will be deployed often.
+
+**Installing.** Setup Node.js App > your app > **Run NPM Install**. It reads
+`package.json` from the application root and builds `better-sqlite3` against the
+Node version the app is configured for.
+
+**Running the one-off commands.** Setup Node.js App > your app > **Run JS
+script** runs any script named in `package.json`, printing the output in the
+panel. That covers all four that matter:
+
+| Script | What it does |
+| --- | --- |
+| `env:check` | Names which settings the app can actually see. Run it first. |
+| `admin:check` | Why the administrator password is not working. Changes nothing. |
+| `seed` | Creates the tables and the administrator account. Run once. |
+| `mail:test` | Sends one message, to prove SMTP works. |
+| `reset:test` | Exercises the real forgot-password endpoint end to end. |
+
+That button cannot pass arguments, so `mail:test` and `reset:test` also read
+their target address from the environment — `MAIL_TEST_TO` and
+`RESET_TEST_EMAIL`. Set the variable, Restart, run the script.
+
+If your cPanel build has no **Run JS script** button, cPanel > **Cron Jobs**
+does the same work: add a job set to run once, with the command that the Node.js
+app page displays for entering the virtualenv, followed by the script — for
+example `cd /home/<user>/wisepen && /home/<user>/nodevenv/wisepen/22/bin/npm run
+seed`. Tick the option to email the output to yourself so you can read it, then
+delete the job once it has run.
+
+**Reading errors.** Setup Node.js App > your app > **Log**. Everything the
+process writes to stdout and stderr lands there, including failed sends.
+
+### Backups and housekeeping
+
+```bash
+npm run backup           # database + uploaded files
+npm run prune:uploads    # report files on disk that no record refers to
+```
+
+`npm run backup` uses SQLite's online backup API rather than copying the file.
+That distinction matters: the database runs in WAL mode, so copying
+`wise-pen.db` in File Manager while the site is live captures the main file
+without the write-ahead log beside it, and the copy silently restores to some
+earlier state. The online backup reads under a lock and is consistent even while
+quotes are arriving. Uploaded manuscripts are copied alongside it — they are the
+one thing here that cannot be regenerated.
+
+It keeps the newest `BACKUP_KEEP` copies (7) in `BACKUP_DIR` and deletes the
+rest, because filling the disk is the failure it exists to prevent. Both take no
+arguments, so they run from **Run JS script** or a cron job. A nightly cron:
+
+```
+source /home1/<user>/nodevenv/<approot>/22/bin/activate && cd /home1/<user>/<approot> && npm run backup
+```
+
+Copies on the same server survive a mistake, not a host failure — download the
+backup directory periodically, or point `BACKUP_DIR` at replicated storage.
+
+`prune:uploads` reports only until given `--delete` (or `PRUNE_CONFIRM=on`), and
+always skips files written in the last hour so a request in flight is never
+mistaken for rubbish. Orphans come from submissions that failed validation after
+their file was written, and from records deleted in the dashboard; they are
+invisible in the UI and count against the same disk as the database.
+
 ### Password reset email on cPanel
 
 Nothing in the reset flow needs configuring; it needs a working mailbox. The
@@ -151,11 +232,17 @@ address held on the account, and never reveals whether an address is registered.
    stale value emails a link to localhost.
 3. Prove the mailbox works at all:
    `npm run mail:test -- you@example.com`
+   With no terminal: set `MAIL_TEST_TO` to that address alongside the SMTP
+   settings, Restart, then Run JS script > `mail:test`. Failures print the
+   likely cause, not just nodemailer's wording.
 4. Prove the reset path works end to end:
    `npm run reset:test -- a.real.client@example.com`
-   It calls the live endpoint exactly as the browser does and reports whether a
-   token row was created and whether mail is configured to carry it. Then check
-   the inbox, open the link, and set a new password.
+   With no terminal: set `RESET_TEST_EMAIL`, Restart, then Run JS script >
+   `reset:test`. It calls the live endpoint exactly as the browser does and
+   reports whether a token row was created and whether mail is configured to
+   carry it. Then check the inbox, open the link, and set a new password.
+5. Remove `MAIL_TEST_TO` and `RESET_TEST_EMAIL` once both pass. They are
+   test scaffolding and nothing should read them in normal operation.
 
 If no email arrives, the send failure is logged by the application (cPanel >
 Setup Node.js App > Log). Common causes: SMTP credentials wrong, the host
@@ -163,6 +250,9 @@ blocking the port, or the message sitting in spam because `MAIL_FROM` is not a
 mailbox on your own domain.
 
 `npm run reset:test -- someone@example.com --issue` prints a working reset link
-and code without sending mail. Use it to get into an account while SMTP is still
-being sorted out; it needs shell and database access, which is already enough to
-change a password directly.
+and code without sending mail — or, with no terminal, `RESET_TEST_EMAIL` plus
+`RESET_TEST_ISSUE=on` and Run JS script. Use it to get into an account while
+SMTP is still being sorted out. It grants nothing new: whoever can run it
+already holds the panel or the shell, and so could rewrite a password hash
+directly. Clear `RESET_TEST_ISSUE` afterwards, so that a stray restart cannot
+mint another link.

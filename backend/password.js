@@ -226,10 +226,23 @@ export async function isBreached(password) {
       signal: AbortSignal.timeout(2500),
       headers: { 'Add-Padding': 'true', 'User-Agent': 'wise-pen-platform' },
     });
-    if (!res.ok) return false;
+    if (!res.ok) return warnOpen(`HTTP ${res.status}`);
     const body = await res.text();
     return body.split('\n').some((line) => line.split(':')[0].trim() === suffix);
-  } catch {
-    return false;
+  } catch (error) {
+    return warnOpen(error.message);
   }
+}
+
+// Failing open is deliberate, but failing open in silence is not: a host that
+// blocks outbound HTTPS would wave every breached password through while the
+// logs showed a healthy site. Say so once per process rather than per attempt,
+// which would turn a password-spraying run into a log flood.
+let warned = false;
+function warnOpen(reason) {
+  if (!warned) {
+    warned = true;
+    console.warn(`Breach check unavailable (${reason}). Passwords are being accepted without it; set PWNED_CHECK=off to make that explicit, or confirm this server can reach api.pwnedpasswords.com.`);
+  }
+  return false;
 }

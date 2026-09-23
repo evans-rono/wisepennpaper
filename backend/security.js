@@ -6,6 +6,7 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { scanAndRemove } from './malware.js';
 import { persistUpload, removeUpload } from './storage.js';
@@ -113,6 +114,53 @@ export async function detectFileType(filePath) {
   }
 }
 
+// Signature checking proves a file is a Word document; it says nothing about
+// what the document carries. A .docm renamed to .docx has the same OOXML zip
+// structure and passes detectFileType unchanged, and legacy .doc is an OLE
+// container that has held macro viruses since the nineties. The reader here is
+// a staff member opening a stranger's manuscript, so the macro is the payload.
+//
+// Both formats name their macro storage in bytes that survive compression: a
+// zip records each entry's path uncompressed in its local header, and OLE keeps
+// its directory entry names as UTF-16. Scanning for those names needs no zip or
+// OLE parser, and no third-party dependency to keep patched.
+// Each marker has to be a name no ordinary manuscript contains. A bare "VBA"
+// in UTF-16 would match a .doc whose *text* discusses macros, and rejecting an
+// author's chapter about Word automation is a worse outcome than the risk it
+// removes. These three are structural names, not prose.
+const MACRO_MARKERS = [
+  Buffer.from('vbaProject.bin', 'latin1'),      // OOXML: word/vbaProject.bin
+  Buffer.from('vbaData.xml', 'latin1'),         // OOXML: word/vbaData.xml
+  Buffer.from('_VBA_PROJECT', 'utf16le'),       // OLE compound file directory
+];
+
+async function containsMacros(filePath) {
+  const handle = await fsp.open(filePath, 'r');
+  try {
+    const CHUNK = 256 * 1024;
+    // The longest marker must not be split across a boundary and missed.
+    const overlap = Math.max(...MACRO_MARKERS.map((m) => m.length));
+    const buffer = Buffer.alloc(CHUNK + overlap);
+    let position = 0, carried = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, carried, CHUNK, position);
+      if (!bytesRead) return false;
+      const view = buffer.subarray(0, carried + bytesRead);
+      if (MACRO_MARKERS.some((marker) => view.includes(marker))) return true;
+      carried = Math.min(overlap, view.length);
+      view.subarray(view.length - carried).copy(buffer, 0);
+      position += bytesRead;
+    }
+  } finally {
+    await handle.close();
+  }
+}
+
+const WORD_TYPES = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
 /**
  * Express middleware for use *after* multer. Replaces each file's claimed type
  * with the detected one, renames it to the matching extension, and rejects the
@@ -132,6 +180,10 @@ export function verifyUploads(req, res, next) {
             { status: 400, expose: true });
         }
         file.mimetype = type.mime; // the bytes, not the header the client sent
+        if (WORD_TYPES.has(type.mime) && await containsMacros(file.path)) {
+          throw Object.assign(new Error('That Word document contains macros, which we cannot accept. Open it in Word and save a copy as .docx (Word Document), which stores the text without them.'),
+            { status: 400, expose: true });
+        }
         const target = file.path.replace(/\.[^./\\]*$/, '') + type.ext;
         if (target !== file.path) {
           await fs.promises.rename(file.path, target);

@@ -13,8 +13,12 @@ services.forEach((s,i)=>insert.run(s[0],slugify(s[0],{lower:true,strict:true}),s
 const email=process.env.ADMIN_EMAIL||'admin@wisepennpaper.co.ke'; const pass=process.env.ADMIN_PASSWORD||'ChangeMe-Now-2026!';
 const existingAdmin=db.prepare('SELECT id,password_hash FROM users WHERE email=?').get(email); let adminState;
 if(!existingAdmin){db.prepare('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)').run('Wise Pen Administrator',email,hashPasswordSync(pass),'super_admin'); adminState='created';}
-else if(!verifyPasswordSync(pass,existingAdmin.password_hash)){db.prepare('UPDATE users SET password_hash=?,role=? WHERE id=?').run(hashPasswordSync(pass),'super_admin',existingAdmin.id); adminState='password rotated to match ADMIN_PASSWORD';}
-else adminState='already present, password unchanged';
+else if(verifyPasswordSync(pass,existingAdmin.password_hash))adminState='already present, password unchanged';
+// Rotating on every mismatch meant that changing the password in the dashboard
+// and then re-running the seed — after any redeploy — silently put the old
+// ADMIN_PASSWORD back. A deliberate reset is still one flag away.
+else if(process.env.ADMIN_PASSWORD_ROTATE==='on'){db.prepare('UPDATE users SET password_hash=?,role=? WHERE id=?').run(hashPasswordSync(pass),'super_admin',existingAdmin.id); adminState='password rotated to match ADMIN_PASSWORD';}
+else adminState='already present; its password differs from ADMIN_PASSWORD and was left alone (set ADMIN_PASSWORD_ROTATE=on to reset it)';
 [['Publishing Tips','publishing-tips'],['Writing','writing'],['Editing','editing'],['Book Design','book-design'],['Author Advice','author-advice'],['Business Branding','business-branding'],['Content Development','content-development'],['Industry News','industry-news']].forEach(x=>db.prepare('INSERT OR IGNORE INTO categories(name,slug) VALUES(?,?)').run(...x));
 const faq=db.prepare('INSERT OR IGNORE INTO faqs(id,question,answer,category,sort_order) VALUES(?,?,?,?,?)');
 [['How do I start a publishing project?','Submit the quote form with your project summary and any available manuscript. Our team reviews the materials and responds with recommended next steps.','Getting Started'],['Can I submit an unfinished manuscript?','Yes. We can assess an early draft and recommend content development, co-writing or editorial support before design and production.','Manuscripts'],['Do you work with organisations as well as authors?','Yes. Wise Pen N’ Paper supports authors, businesses, NGOs and institutions with books, reports, magazines, profiles and branded publications.','Services']].forEach((x,i)=>faq.run(i+1,...x,i));
@@ -25,6 +29,5 @@ console.log(`Seed complete. Admin ${email}: ${adminState}.`);
 // the configured one would be rejected for an ordinary client.
 const adminVerdict=assessPassword(pass,{email,name:'Wise Pen Administrator'});
 if(!adminVerdict.ok)console.warn(`WARNING: ADMIN_PASSWORD is weak — ${adminVerdict.problem} Client accounts must pass this check (minimum ${MIN_LENGTH} characters); set a stronger ADMIN_PASSWORD and re-run the seed before deploying.`);
-console.log('Business statistics are not seeded. Add verified values for books_published, authors_supported, projects_completed, years_experience and organisations_served to the settings table; the homepage statistics band stays hidden until then.');
 
 db.close();

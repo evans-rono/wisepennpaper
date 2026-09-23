@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="/theme.js"></script>
+<!--ssr:head--><!--/ssr:head-->
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="top">
+  <a class="brand" href="/" aria-label="Wise Pen home"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="#logo"/></svg></a>
+  <nav id="navlinks" aria-label="Main">
+    <a href="/#services">Services</a><a href="/#about">About</a>
+    <a href="/#resources">Resources</a><a href="/#faqs">FAQs</a><a href="/#contact">Contact</a>
+    <button type="button" class="search-open">Search</button>
+    <a class="btn small" href="/#quote">Start Your Project</a>
+  </nav>
+  <div class="nav-actions">
+    <button type="button" class="theme-toggle" id="themeToggle" aria-pressed="false" aria-label="Switch to dark theme"><span class="moon" aria-hidden="true">☾</span><span class="sun" aria-hidden="true">☀</span></button>
+    <span id="authNav" class="auth-nav" hidden></span>
+    <button type="button" class="menu" aria-expanded="false" aria-controls="navlinks">Menu</button>
+  </div>
+</header>
+
+<main id="main"><!--ssr:main--><!--/ssr:main--></main>
+
+<footer>
+  <div class="footer-intro">
+    <div class="brand footer-brand" role="img" aria-label="The Wise Pen N’ Paper"><svg class="logo" viewBox="0 0 1330 312" aria-hidden="true" focusable="false"><use href="#logo"/></svg></div>
+    <p>Professional publishing, content development and creative services for ideas that deserve to travel further.</p>
+  </div>
+  <div><b>Explore</b><a href="/#services">Services</a><a href="/#resources">Resources</a><a href="/#contact">Contact</a></div>
+  <div><b>Client access</b><a href="/portal">Client Portal</a><a href="/admin">Staff &amp; Admin</a><a href="/#quote">Request a Quote</a></div>
+  <small>© <span id="year">2026</span> The Wise Pen N’ Paper. All rights reserved.</small>
+</footer>
+
+<dialog class="modal" id="searchModal" aria-labelledby="searchModalTitle">
+  <div class="modal-card">
+    <button type="button" class="close" aria-label="Close search">×</button>
+    <h2 id="searchModalTitle">Search Wise Pen</h2>
+    <label class="sr-only" for="searchInput">Search services, projects, FAQs and articles</label>
+    <input id="searchInput" type="search" placeholder="Search services, projects, FAQs and articles" autocomplete="off">
+    <div id="searchResults" aria-live="polite"></div>
+  </div>
+</dialog>
+
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

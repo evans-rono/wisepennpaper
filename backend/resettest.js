@@ -11,10 +11,14 @@ import 'dotenv/config';
 import crypto from 'node:crypto';
 import db from './db.js';
 
-const email = process.argv.find((a) => a.includes('@'));
-const issue = process.argv.includes('--issue');
+// cPanel's "Run JS script" button cannot pass arguments, and shared plans often
+// have no terminal at all, so both inputs may also arrive as environment
+// variables on the application.
+const email = process.argv.find((a) => a.includes('@')) || process.env.RESET_TEST_EMAIL;
+const issue = process.argv.includes('--issue') || process.env.RESET_TEST_ISSUE === 'on';
 if (!email) {
   console.error('Usage: npm run reset:test -- someone@example.com [--issue]');
+  console.error('Or set RESET_TEST_EMAIL (and RESET_TEST_ISSUE=on) and run with no arguments.');
   process.exit(1);
 }
 
@@ -41,17 +45,38 @@ if (issue) {
   process.exit(0);
 }
 
-// The real endpoint is CSRF-protected, exactly as the browser sees it.
-const csrfRes = await fetch(`${base}/api/csrf`);
-const cookie = (csrfRes.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).join('; ');
-const { csrfToken } = await csrfRes.json();
-const res = await fetch(`${base}/api/auth/forgot-password`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'CSRF-Token': csrfToken, cookie },
-  body: JSON.stringify({ email }),
-});
-const body = await res.json().catch(() => ({}));
-console.log(`\nRequest     ${res.status} ${body.message || body.error || ''}`);
+// A deactivated account is skipped by the endpoint on purpose: no token is
+// created and no email is sent, which is exactly what it looks like when mail
+// is broken. Say so plainly rather than letting it look like a mail fault.
+if (user && user.is_active === 0) {
+  console.log('\nThis account is DEACTIVATED, so the endpoint will not send it anything.');
+  console.log('Reactivate it from the dashboard (Team > the account > activate) and try again.');
+  db.close();
+  process.exit(1);
+}
+
+// The real endpoint is CSRF-protected, exactly as the browser sees it. Shared
+// hosting can refuse this: Node compiles a WebAssembly HTTP parser the first
+// time fetch() is used, and CloudLinux memory limits will not always allow it.
+// That must not take the rest of the report down with it.
+try {
+  const csrfRes = await fetch(`${base}/api/csrf`);
+  const cookie = (csrfRes.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).join('; ');
+  const { csrfToken } = await csrfRes.json();
+  const res = await fetch(`${base}/api/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CSRF-Token': csrfToken, cookie },
+    body: JSON.stringify({ email }),
+  });
+  const body = await res.json().catch(() => ({}));
+  console.log(`\nRequest     ${res.status} ${body.message || body.error || ''}`);
+} catch (error) {
+  console.log(`\nRequest     could not be sent from this server (${error.message})`);
+  if (/WebAssembly|Out of memory|allocate/i.test(error.message)) {
+    console.log('            That is the host refusing memory for fetch(), not a fault in the site.');
+    console.log('            Use the form at ' + base + '/portal instead, then re-run this to read the result.');
+  }
+}
 
 const row = user && db.prepare(
   'SELECT created_at,expires_at,used_at FROM password_reset_tokens WHERE user_id=? ORDER BY id DESC LIMIT 1').get(user.id);

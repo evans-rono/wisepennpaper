@@ -1,6 +1,13 @@
-import 'dotenv/config'; import path from 'node:path'; import fs from 'node:fs'; import crypto from 'node:crypto'; import express from 'express'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import session from 'express-session'; import cookieParser from 'cookie-parser'; import multer from 'multer'; import sanitizeHtml from 'sanitize-html'; import slugify from 'slugify'; import { z } from 'zod'; import db from './db.js'; import { renderHome, renderService, renderNotFound, renderThanks, renderAdmin, renderPortal, serviceBySlug, serviceSlugs, baseUrl } from './render.js'; import { hashPassword, verifyPassword, needsRehash, assessPassword, isBreached, MIN_LENGTH, MAX_LENGTH, minLengthFor } from './password.js'; import { SqliteSessionStore, lockedFor, recordFailure, clearFailures, retryMessage } from './store.js'; import { createCsrf, verifyUploads, safeFileName } from './security.js'; import { scanAndRemove } from './malware.js'; import { downloadUpload } from './storage.js'; import { sendMail, sendPasswordReset, sendSignInAlert } from './mailer.js'; import { generateSecret, generateCode, verifyCode, otpauthUri, formatSecret, generateRecoveryCodes, hashRecoveryCode, consumeRecoveryCode } from './totp.js'; import { toSvg } from './qr.js'; import { googleEnabled, authorisationUrl, exchangeCode, verifyIdToken, refuseReason } from './google.js'; import { normaliseEmail, normalisePhone, parseClientDateTime, isPastCalendarDate } from './validation.js';
+import 'dotenv/config'; import path from 'node:path'; import fs from 'node:fs'; import crypto from 'node:crypto'; import express from 'express'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import session from 'express-session'; import cookieParser from 'cookie-parser'; import multer from 'multer'; import sanitizeHtml from 'sanitize-html'; import slugify from 'slugify'; import { z } from 'zod'; import db from './db.js'; import { renderHome, renderService, renderNotFound, renderThanks, renderAdmin, renderPortal, renderReset, renderPrivacy, serviceBySlug, serviceSlugs, baseUrl } from './render.js'; import { hashPassword, verifyPassword, needsRehash, assessPassword, isBreached, MIN_LENGTH, MAX_LENGTH, minLengthFor } from './password.js'; import { SqliteSessionStore, lockedFor, recordFailure, clearFailures, retryMessage } from './store.js'; import { createCsrf, verifyUploads, safeFileName } from './security.js'; import { scanAndRemove, scannerAvailable } from './malware.js'; import { downloadUpload } from './storage.js'; import { sendMail, sendPasswordReset, sendSignInAlert } from './mailer.js'; import { generateSecret, generateCode, verifyCode, otpauthUri, formatSecret, generateRecoveryCodes, hashRecoveryCode, consumeRecoveryCode } from './totp.js'; import { toSvg } from './qr.js'; import { googleEnabled, authorisationUrl, exchangeCode, verifyIdToken, refuseReason } from './google.js'; import { normaliseEmail, normalisePhone, parseClientDateTime, isPastCalendarDate } from './validation.js';
 const app=express(), root=path.resolve('.'), uploads=path.join(root,'uploads'); fs.mkdirSync(uploads,{recursive:true});
-if(process.env.NODE_ENV==='production'){const missing=['SESSION_SECRET'].filter(k=>!process.env[k]||process.env[k].length<32); if(process.env.MALWARE_SCAN==='off')missing.push('MALWARE_SCAN'); if(process.env.STORAGE_DRIVER&&process.env.STORAGE_DRIVER!=='local')missing.push(...['S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY'].filter(k=>!process.env[k])); if(missing.length){console.error(`Refusing to start: ${missing.join(', ')} must be configured in production.`); process.exit(1);}}
+if(process.env.NODE_ENV==='production'){const missing=['SESSION_SECRET'].filter(k=>!process.env[k]||process.env[k].length<32); if(process.env.STORAGE_DRIVER&&process.env.STORAGE_DRIVER!=='local')missing.push(...['S3_BUCKET','S3_ACCESS_KEY_ID','S3_SECRET_ACCESS_KEY'].filter(k=>!process.env[k])); if(missing.length){console.error(`Refusing to start: ${missing.join(', ')} must be configured in production.`); process.exit(1);}
+  // Scanning used to be mandatory in production, which on hosting without the
+  // ClamAV CLI meant every attachment failed at upload time with a generic 500
+  // while the site otherwise looked healthy. Turning it off is now a supported
+  // choice, but it has to be a deliberate one: unset plus no scanner stops the
+  // boot, so nobody discovers the gap from a lost quote request.
+  if(!scannerAvailable()){console.error(`Refusing to start: MALWARE_SCAN is "${process.env.MALWARE_SCAN||'clamav'}" but that scanner is not installed on this server.`); console.error('Install it, or set MALWARE_SCAN=off if your host scans uploaded files out of band (cPanel ImunifyAV and similar).'); process.exit(1);}
+  if(process.env.MALWARE_SCAN==='off')console.warn('WARNING: MALWARE_SCAN=off — uploads are type-checked against their magic bytes but not scanned for malware.');}
 const sessionSecret=process.env.SESSION_SECRET||crypto.randomBytes(32).toString('hex');
 // In production a missing secret is a deployment fault, not a default to paper
 // over: every restart would silently sign out every user.
@@ -12,6 +19,18 @@ app.disable('x-powered-by');
 // deployment: too high and a caller can spoof their address by sending the
 // header themselves. Set TRUST_PROXY=0 when the app is exposed directly.
 if(process.env.NODE_ENV==='production') app.set('trust proxy',Number(process.env.TRUST_PROXY??1));
+// Session and CSRF cookies are Secure, so a visitor who arrives over plain
+// HTTP cannot sign in — the browser withholds the cookies and the attempt
+// fails after the password has already crossed the network in clear text.
+// HSTS only protects people who have reached the HTTPS site at least once, so
+// the first visit and every stale http:// link need this redirect. GET and
+// HEAD only: replaying a POST to a new URL would silently drop its body, and a
+// form that was submitted over HTTP has already leaked whatever it carried.
+if(process.env.NODE_ENV==='production'&&process.env.FORCE_HTTPS!=='off')app.use((req,res,next)=>{
+  if(req.secure)return next();
+  if(req.method!=='GET'&&req.method!=='HEAD')return res.status(403).json({error:'This endpoint requires HTTPS.'});
+  res.redirect(308,`https://${req.host}${req.originalUrl}`);
+});
 // No 'unsafe-inline' for styles: the admin and portal pages moved their inline
 // <style> blocks into dashboard.css, and the one dynamic style (the portal
 // progress bar) is set through the CSSOM, which the policy does not restrict.
@@ -36,25 +55,34 @@ const normalizeFormContact=(req,res,next)=>{
     if(!selected)return res.status(400).json({error:'Choose a valid consultation date and time.',field:'preferred_date'});
     if(selected.getTime()<=Date.now())return res.status(400).json({error:'Choose a future consultation time.',field:'preferred_date'});
   }
-  if(req.path==='/api/quotes'&&isPastCalendarDate(req.body.expected_date))
-    return res.status(400).json({error:'Expected completion date cannot be in the past.',field:'expected_date'});
   next();
 };
-app.use(normalizeFormContact);
 // Sessions live in SQLite, not process memory: a restart or deploy no longer
 // signs everybody out, and more than one instance can share them.
 const SESSION_TTL_MS=8*60*60*1000;
 app.use(session({name:'wpnp.sid',secret:sessionSecret,resave:false,saveUninitialized:false,store:new SqliteSessionStore({ttlMs:SESSION_TTL_MS}),cookie:{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:SESSION_TTL_MS}}));
 // The limiters exist to stop automated abuse, not to ration ordinary use, so
-// the thresholds sit far above anything a person generates: signed-in staff are
-// skipped entirely, and only *failed* credential attempts count. Both ceilings
-// are env-overridable. The per-account backoff in store.js is what actually
-// stops targeted brute-force; these are the blunt outer guard.
+// the thresholds sit far above anything a person generates: staff are skipped
+// entirely, and only *failed* credential attempts count. All three ceilings are
+// env-overridable. The per-account backoff in store.js is what actually stops
+// targeted brute-force; these are the blunt outer guard.
 const signedIn=req=>!!req.session?.user;
-app.use('/api',rateLimit({windowMs:60_000,limit:Number(process.env.API_RATE_LIMIT)||600,skip:signedIn,standardHeaders:'draft-7',legacyHeaders:false}));
+const isStaff=req=>['super_admin','admin','staff'].includes(req.session?.user?.role);
+// Signing in used to skip this limiter outright, which made registration the
+// cheapest way to remove it: anyone could create a client account and then call
+// the API without a ceiling. Staff are still exempt because moderating content
+// genuinely does burst, but a signed-in client is just a visitor with a name.
+const apiLimit=Number(process.env.API_RATE_LIMIT)||600;
+app.use('/api',rateLimit({windowMs:60_000,limit:req=>signedIn(req)?apiLimit*4:apiLimit,skip:isStaff,standardHeaders:'draft-7',legacyHeaders:false}));
 const CREDENTIAL_ROUTES=new Set(['/api/auth/login','/api/auth/register','/api/auth/password','/api/auth/forgot-password','/api/auth/reset-password']);
 const credentialLimiter=rateLimit({windowMs:15*60_000,limit:Number(process.env.AUTH_RATE_LIMIT)||50,skipSuccessfulRequests:true,standardHeaders:'draft-7',legacyHeaders:false});
 app.use((req,res,next)=>CREDENTIAL_ROUTES.has(req.path)?credentialLimiter(req,res,next):next());
+// Quote submissions accept five 15 MB attachments from anyone, signed in or
+// not, and the database shares its disk with those files: filling one stops
+// writes to the other. Nobody sends a genuine publishing brief this often, so
+// the ceiling is low and applies to everyone except staff.
+const uploadLimiter=rateLimit({windowMs:60*60_000,limit:Number(process.env.UPLOAD_RATE_LIMIT)||10,skip:isStaff,standardHeaders:'draft-7',legacyHeaders:false,
+  message:{error:'Too many project requests from this connection. Please try again later, or email us the brief directly.'}});
 // Credentials and session state must never sit in a shared or browser cache.
 const NO_STORE=/^\/api\/(auth|session|csrf|admin|client)(\/|$)/;
 app.use((req,res,next)=>{if(NO_STORE.test(req.path))res.setHeader('Cache-Control','no-store'); next();});
@@ -76,7 +104,16 @@ app.use(csrf.issue);
 // travels in the form body, which multer has not parsed yet. It runs csrf.verify
 // itself, after the upload middleware.
 app.use((req,res,next)=>(req.method==='POST'&&req.path==='/api/quotes')?next():csrf.verify(req,res,next));
-const clean=v=>sanitizeHtml(String(v??''),{allowedTags:[],allowedAttributes:{}}).trim(); const ref=p=>`${p}-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; const audit=(req,a,e,id,actorId)=>db.prepare('INSERT INTO audit_logs(user_id,action,entity,entity_id,ip) VALUES(?,?,?,?,?)').run(req.session.user?.id||actorId||null,a,e,String(id||''),req.ip);
+// Normalisation sits behind the CSRF check so a request without a valid token is
+// turned away before it learns anything about which addresses or numbers the
+// site accepts. The multipart quote POST is the exception noted above: it
+// verifies its own token after multer, and validates its dates in the route.
+app.use(normalizeFormContact);
+const clean=v=>sanitizeHtml(String(v??''),{allowedTags:[],allowedAttributes:{}}).trim(); const ref=p=>`${p}-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`; const NOBODY=Symbol('no actor');
+// An explicit actor beats the session. During sign-in the session still holds
+// whoever was signed in before on this browser, so reading it there credits
+// the wrong person; NOBODY marks the steps taken before anyone is authenticated.
+const audit=(req,a,e,id,actor)=>db.prepare('INSERT INTO audit_logs(user_id,action,entity,entity_id,ip) VALUES(?,?,?,?,?)').run(actor===NOBODY?null:(actor??req.session.user?.id??null),a,e,String(id||''),req.ip);
 const notify=async(subject,text)=>{if(!process.env.ALERT_EMAIL)return; await sendMail({to:process.env.ALERT_EMAIL,subject,text});};
 const hashResetToken=token=>crypto.createHash('sha256').update(token).digest('hex');
 const hashResetCode=code=>crypto.createHash('sha256').update(String(code)).digest('hex');
@@ -134,6 +171,22 @@ const wantsHtml=req=>req.accepts(['json','html'])==='html';
 // so the reference never has to travel in a query string.
 const thank=(req,res,payload)=>{req.session.flash=payload; req.session.save(()=>res.redirect(303,'/thank-you'));};
 const failHtml=(req,res,message)=>{req.session.flash={heading:'We could not send that',message,error:true}; req.session.save(()=>res.redirect(303,'/thank-you'));};
+// A field positioned off-screen that no person can see, but that form-filling
+// bots populate along with every other input. Cheaper than a CAPTCHA and it
+// costs visitors nothing — no puzzle, no third-party script, and no data sent
+// to anyone. It catches indiscriminate spam, not a person targeting this site.
+const trapped=req=>typeof req.body?.wpnp_check==='string'&&req.body.wpnp_check.trim()!=='';
+// Answering as though it worked is deliberate: a visible rejection tells
+// whoever wrote the script precisely which field to leave alone next time.
+const discard=(req,res,{heading,message})=>{
+  // The value is logged so a false positive is diagnosable. A bot leaves
+  // garbage or a spam URL; a password manager leaves something that looks like
+  // the visitor's own details, and that would mean a real enquiry was binned.
+  console.warn(`Honeypot: discarded ${req.method} ${req.originalUrl} from ${req.ip} — field held ${JSON.stringify(String(req.body.wpnp_check).slice(0, 80))}`);
+  for(const f of req.files||[])fs.rmSync(f.path,{force:true});
+  if(wantsHtml(req))return thank(req,res,{heading,message});
+  res.status(201).json({ok:true});
+};
 // Starts a clean session and attaches the user, so a session id an attacker
 // planted before sign-in cannot be reused afterwards.
 const publicUser=(u,startedAt=new Date().toISOString())=>({id:u.id,name:u.name,email:u.email,phone:u.phone,role:u.role,startedAt,
@@ -194,17 +247,17 @@ const u=db.prepare('SELECT * FROM users WHERE email=?').get(email);
 // the account does not exist, so a missing email costs the same as a wrong
 // password and cannot be told apart by response time.
 const okPassword=await verifyPassword(req.body.password,u?.password_hash);
-if(!u||!okPassword){recordFailure(key); audit(req,'login_failed','user',u?.id||email); return res.status(401).json({error:'Invalid email or password'});}
+if(!u||!okPassword){recordFailure(key); audit(req,'login_failed','user',u?.id||email,NOBODY); return res.status(401).json({error:'Invalid email or password'});}
 // Checked after the password so a deactivated account is indistinguishable
 // from a wrong password until the caller has already proved the credential.
-if(u.is_active===0){audit(req,'login_deactivated','user',u.id); return res.status(403).json({error:'This account is no longer active. Contact an administrator.'});}
+if(u.is_active===0){audit(req,'login_deactivated','user',u.id,NOBODY); return res.status(403).json({error:'This account is no longer active. Contact an administrator.'});}
 clearFailures(key);
 // Quietly move pre-existing hashes onto the current scheme now that we hold
 // the plaintext and know it is correct.
 if(needsRehash(u.password_hash)){try{db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await hashPassword(req.body.password),u.id);}catch(e){console.error('rehash failed',e);}}
 // With two-factor on, the password alone buys nothing but a short-lived ticket
 // to the second step. No user is put on the session until that step passes.
-if(u.totp_enabled){req.session.pending={id:u.id,at:Date.now()}; audit(req,'login_2fa_pending','user',u.id); return req.session.save(()=>res.json({ok:true,twoFactorRequired:true}));}
+if(u.totp_enabled){req.session.pending={id:u.id,at:Date.now()}; audit(req,'login_2fa_pending','user',u.id,NOBODY); return req.session.save(()=>res.json({ok:true,twoFactorRequired:true}));}
 audit(req,'login','user',u.id,u.id); startSession(req,res,u);});
 
 const PENDING_MS=5*60_000;
@@ -228,7 +281,7 @@ app.post('/api/auth/2fa/verify',async(req,res)=>{const u=pendingUser(req);
     clearFailures(key); delete req.session.pending; audit(req,'login_recovery_code','user',u.id,u.id);
     return startSession(req,res,u);
   }
-  recordFailure(key); audit(req,'login_2fa_failed','user',u.id);
+  recordFailure(key); audit(req,'login_2fa_failed','user',u.id,NOBODY);
   res.status(401).json({error:'That code is not correct.',field:'code'});});
 
 /* ------------------------------------------------------------ google sign-in */
@@ -268,7 +321,7 @@ app.get('/api/auth/google/callback',async(req,res)=>{
   }catch(e){console.error('google sign-in failed',e); return fail('We could not verify that Google account.');}
 
   const refusal=refuseReason(claims);
-  if(refusal){audit(req,'google_refused','user',claims.email||''); return fail(refusal);}
+  if(refusal){audit(req,'google_refused','user',claims.email||'',NOBODY); return fail(refusal);}
 
   const email=String(claims.email).toLowerCase();
   let user=db.prepare('SELECT * FROM users WHERE email=?').get(email);
@@ -284,13 +337,13 @@ app.get('/api/auth/google/callback',async(req,res)=>{
     user=db.prepare('SELECT * FROM users WHERE id=?').get(info.lastInsertRowid);
     audit(req,'google_registered','user',user.id);
   }
-  if(user.is_active===0){audit(req,'login_deactivated','user',user.id); return fail('This account is no longer active. Contact an administrator.');}
+  if(user.is_active===0){audit(req,'login_deactivated','user',user.id,NOBODY); return fail('This account is no longer active. Contact an administrator.');}
 
   // Google having authenticated the person says nothing about this site's own
   // second factor, so an account with TOTP on still has to complete it.
   if(user.totp_enabled){
     req.session.pending={id:user.id,at:Date.now()};
-    audit(req,'login_2fa_pending','user',user.id);
+    audit(req,'login_2fa_pending','user',user.id,NOBODY);
     return req.session.save(()=>res.redirect(pending.returnTo));
   }
   audit(req,'login_google','user',user.id,user.id);
@@ -368,11 +421,11 @@ db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await hashPassword
 startSession(req,res,u);});
 app.get('/api/settings',(req,res)=>res.json(Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map(x=>[x.key,x.value]))));
 app.get('/api/services',(req,res)=>res.json(db.prepare('SELECT * FROM services ORDER BY sort_order,name').all().map(x=>({...x,benefits:JSON.parse(x.benefits),process:JSON.parse(x.process),deliverables:JSON.parse(x.deliverables),faqs:JSON.parse(x.faqs)}))));
-app.get('/api/portfolio',(req,res)=>res.json(db.prepare('SELECT * FROM portfolio ORDER BY featured DESC,completion_date DESC').all())); app.get('/api/testimonials',(req,res)=>res.json(db.prepare('SELECT * FROM testimonials WHERE published=1 ORDER BY id DESC').all())); app.get('/api/faqs',(req,res)=>res.json(db.prepare('SELECT * FROM faqs WHERE published=1 ORDER BY sort_order').all())); app.get('/api/blog',(req,res)=>res.json(db.prepare("SELECT b.*,c.name category,u.name author FROM blog_posts b LEFT JOIN categories c ON c.id=b.category_id LEFT JOIN users u ON u.id=b.author_id WHERE b.status='published' ORDER BY b.published_at DESC").all()));
-app.get('/api/search',(req,res)=>{const term=clean(req.query.q).slice(0,80); const q=`%${term}%`; if(q==='%%')return res.json({services:[],portfolio:[],faqs:[],posts:[]}); res.json({services:db.prepare('SELECT id,name,summary,slug FROM services WHERE name LIKE ? OR description LIKE ? LIMIT 12').all(q,q),portfolio:db.prepare('SELECT id,title,description,slug,category FROM portfolio WHERE title LIKE ? OR description LIKE ? LIMIT 12').all(q,q),faqs:db.prepare('SELECT id,question,answer FROM faqs WHERE question LIKE ? OR answer LIKE ? LIMIT 12').all(q,q),posts:db.prepare("SELECT id,title,excerpt,slug FROM blog_posts WHERE status='published' AND (title LIKE ? OR content LIKE ?) LIMIT 12").all(q,q)});});
-app.post('/api/quotes',upload.array('files',5),csrf.verify,verifyUploads,(req,res)=>{try{const d=z.object({full_name:z.string().min(2),email:z.email(),phone:z.string().min(7),organisation:z.string().optional(),location:z.string().optional(),project_type:z.string().min(2),service_id:z.coerce.number().optional(),project_title:z.string().min(2),description:z.string().min(20),target_audience:z.string().optional(),page_word_estimate:z.string().optional(),quantity:z.coerce.number().optional(),expected_date:z.string().optional(),budget:z.string().optional()}).parse(req.body); const r=ref('WPNP'); const info=db.prepare('INSERT INTO quote_requests(reference,user_id,full_name,email,phone,organisation,location,project_type,service_id,project_title,description,target_audience,page_word_estimate,quantity,expected_date,budget) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(r,req.session.user?.id||null,...['full_name','email','phone','organisation','location','project_type'].map(k=>clean(d[k])),d.service_id||null,clean(d.project_title),clean(d.description),clean(d.target_audience),clean(d.page_word_estimate),d.quantity||null,d.expected_date||null,clean(d.budget)); for(const f of req.files||[])db.prepare('INSERT INTO files(quote_id,uploaded_by,original_name,stored_name,mime_type,size) VALUES(?,?,?,?,?,?)').run(info.lastInsertRowid,req.session.user?.id||null,safeFileName(clean(f.originalname)),f.filename,f.mimetype,f.size); db.prepare('INSERT INTO notifications(type,title,body) VALUES(?,?,?)').run('quote','New quote request',`${r}: ${clean(d.project_title)}`); notify(`New quote request ${r}`,`From ${d.full_name}: ${d.project_title}`).catch(console.error); if(wantsHtml(req))return thank(req,res,{heading:'Your project request is in.',message:'We will review the brief and come back to you with next steps.',reference:r}); res.status(201).json({ok:true,reference:r});}catch(e){for(const f of req.files||[])fs.rmSync(f.path,{force:true}); if(!e.expose)console.error('quote submission failed',e); const m=e.expose?e.message:'Please check the form and try again.'; if(wantsHtml(req))return failHtml(req,res,m); res.status(e.status||400).json({error:m});}});
-app.post('/api/contact',(req,res)=>{try{const d=z.object({name:z.string().trim().min(2),email:z.string(),phone:z.string().optional(),subject:z.string().trim().min(3),message:z.string().trim().min(10)}).parse(req.body); const email=requestEmail(d.email); if(!email)throw Object.assign(new Error('Enter a valid email address.'),{field:'email'}); const phone=d.phone?requestPhone(d.phone,req.body.phone_country):''; if(d.phone&&!phone)throw Object.assign(new Error('Enter a valid phone number for the selected country.'),{field:'phone'}); const x=db.prepare('INSERT INTO contact_messages(name,email,phone,subject,message) VALUES(?,?,?,?,?)').run(clean(d.name),email,phone,clean(d.subject),clean(d.message)); notify('New website enquiry',`${d.name}: ${d.subject}`).catch(console.error); if(wantsHtml(req))return thank(req,res,{heading:'Message received.',message:'Our team will respond using the contact details you supplied.'}); res.status(201).json({ok:true,id:x.lastInsertRowid});}catch(e){const m=e.field?e.message:'Please complete all required fields correctly'; if(wantsHtml(req))return failHtml(req,res,m); res.status(400).json({error:m,field:e.field});}});
-app.post('/api/appointments',(req,res)=>{try{const d=z.object({full_name:z.string().min(2),email:z.email(),phone:z.string().min(7),consultation_type:z.string().min(2),preferred_date:z.string().min(8),preferred_time:z.string().min(3),project_info:z.string().optional()}).parse(req.body); if(new Date(`${d.preferred_date}T${d.preferred_time}`)<new Date())throw Error('Choose a future time'); const r=ref('CONS'); db.prepare('INSERT INTO appointments(reference,user_id,full_name,email,phone,consultation_type,preferred_date,preferred_time,project_info) VALUES(?,?,?,?,?,?,?,?,?)').run(r,req.session.user?.id||null,...['full_name','email','phone','consultation_type','preferred_date','preferred_time','project_info'].map(k=>clean(d[k]))); notify(`New consultation ${r}`,`${d.full_name} requested ${d.preferred_date} ${d.preferred_time}`).catch(console.error); if(wantsHtml(req))return thank(req,res,{heading:'Consultation requested.',message:'We will confirm the slot with you shortly.',reference:r}); res.status(201).json({ok:true,reference:r});}catch(e){const m=e.message||'Invalid appointment'; if(wantsHtml(req))return failHtml(req,res,m); res.status(400).json({error:m});}});
+app.get('/api/faqs',(req,res)=>res.json(db.prepare('SELECT * FROM faqs WHERE published=1 ORDER BY sort_order').all())); app.get('/api/blog',(req,res)=>res.json(db.prepare("SELECT b.*,c.name category,u.name author FROM blog_posts b LEFT JOIN categories c ON c.id=b.category_id LEFT JOIN users u ON u.id=b.author_id WHERE b.status='published' ORDER BY b.published_at DESC").all()));
+app.get('/api/search',(req,res)=>{const term=clean(req.query.q).slice(0,80); const q=`%${term}%`; if(q==='%%')return res.json({services:[],faqs:[],posts:[]}); res.json({services:db.prepare('SELECT id,name,summary,slug FROM services WHERE name LIKE ? OR description LIKE ? LIMIT 12').all(q,q),faqs:db.prepare('SELECT id,question,answer FROM faqs WHERE question LIKE ? OR answer LIKE ? LIMIT 12').all(q,q),posts:db.prepare("SELECT id,title,excerpt,slug FROM blog_posts WHERE status='published' AND (title LIKE ? OR content LIKE ?) LIMIT 12").all(q,q)});});
+app.post('/api/quotes',uploadLimiter,upload.array('files',5),csrf.verify,verifyUploads,(req,res)=>{try{if(trapped(req))return discard(req,res,{heading:'Your project request is in.',message:'We will review the brief and come back to you with next steps.'}); if(isPastCalendarDate(req.body.expected_date))throw Object.assign(new Error('Expected completion date cannot be in the past.'),{expose:true,status:400,field:'expected_date'}); const d=z.object({full_name:z.string().min(2),email:z.email(),phone:z.string().min(7),organisation:z.string().optional(),location:z.string().optional(),project_type:z.string().min(2),service_id:z.coerce.number().optional(),project_title:z.string().min(2),description:z.string().min(20),target_audience:z.string().optional(),page_word_estimate:z.string().optional(),quantity:z.coerce.number().optional(),expected_date:z.string().optional(),budget:z.string().optional()}).parse(req.body); const r=ref('WPNP'); const info=db.prepare('INSERT INTO quote_requests(reference,user_id,full_name,email,phone,organisation,location,project_type,service_id,project_title,description,target_audience,page_word_estimate,quantity,expected_date,budget) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(r,req.session.user?.id||null,...['full_name','email','phone','organisation','location','project_type'].map(k=>clean(d[k])),d.service_id||null,clean(d.project_title),clean(d.description),clean(d.target_audience),clean(d.page_word_estimate),d.quantity||null,d.expected_date||null,clean(d.budget)); for(const f of req.files||[])db.prepare('INSERT INTO files(quote_id,uploaded_by,original_name,stored_name,mime_type,size) VALUES(?,?,?,?,?,?)').run(info.lastInsertRowid,req.session.user?.id||null,safeFileName(clean(f.originalname)),f.filename,f.mimetype,f.size); db.prepare('INSERT INTO notifications(type,title,body) VALUES(?,?,?)').run('quote','New quote request',`${r}: ${clean(d.project_title)}`); notify(`New quote request ${r}`,`From ${d.full_name}: ${d.project_title}`).catch(console.error); if(wantsHtml(req))return thank(req,res,{heading:'Your project request is in.',message:'We will review the brief and come back to you with next steps.',reference:r}); res.status(201).json({ok:true,reference:r});}catch(e){for(const f of req.files||[])fs.rmSync(f.path,{force:true}); if(!e.expose)console.error('quote submission failed',e); const m=e.expose?e.message:'Please check the form and try again.'; if(wantsHtml(req))return failHtml(req,res,m); res.status(e.status||400).json(e.field?{error:m,field:e.field}:{error:m});}});
+app.post('/api/contact',(req,res)=>{try{if(trapped(req))return discard(req,res,{heading:'Thank you for writing.',message:'We have your message and will reply shortly.'}); const d=z.object({name:z.string().trim().min(2),email:z.string(),phone:z.string().optional(),subject:z.string().trim().min(3),message:z.string().trim().min(10)}).parse(req.body); const email=requestEmail(d.email); if(!email)throw Object.assign(new Error('Enter a valid email address.'),{field:'email'}); const phone=d.phone?requestPhone(d.phone,req.body.phone_country):''; if(d.phone&&!phone)throw Object.assign(new Error('Enter a valid phone number for the selected country.'),{field:'phone'}); const x=db.prepare('INSERT INTO contact_messages(name,email,phone,subject,message) VALUES(?,?,?,?,?)').run(clean(d.name),email,phone,clean(d.subject),clean(d.message)); notify('New website enquiry',`${d.name}: ${d.subject}`).catch(console.error); if(wantsHtml(req))return thank(req,res,{heading:'Message received.',message:'Our team will respond using the contact details you supplied.'}); res.status(201).json({ok:true,id:x.lastInsertRowid});}catch(e){const m=e.field?e.message:'Please complete all required fields correctly'; if(wantsHtml(req))return failHtml(req,res,m); res.status(400).json({error:m,field:e.field});}});
+app.post('/api/appointments',(req,res)=>{try{if(trapped(req))return discard(req,res,{heading:'Your consultation request is in.',message:'We will confirm the time with you shortly.'}); const d=z.object({full_name:z.string().min(2),email:z.email(),phone:z.string().min(7),consultation_type:z.string().min(2),preferred_date:z.string().min(8),preferred_time:z.string().min(3),project_info:z.string().optional()}).parse(req.body); if(new Date(`${d.preferred_date}T${d.preferred_time}`)<new Date())throw Error('Choose a future time'); const r=ref('CONS'); db.prepare('INSERT INTO appointments(reference,user_id,full_name,email,phone,consultation_type,preferred_date,preferred_time,project_info) VALUES(?,?,?,?,?,?,?,?,?)').run(r,req.session.user?.id||null,...['full_name','email','phone','consultation_type','preferred_date','preferred_time','project_info'].map(k=>clean(d[k]))); notify(`New consultation ${r}`,`${d.full_name} requested ${d.preferred_date} ${d.preferred_time}`).catch(console.error); if(wantsHtml(req))return thank(req,res,{heading:'Consultation requested.',message:'We will confirm the slot with you shortly.',reference:r}); res.status(201).json({ok:true,reference:r});}catch(e){const m=e.message||'Invalid appointment'; if(wantsHtml(req))return failHtml(req,res,m); res.status(400).json({error:m});}});
 app.get('/api/admin/dashboard',auth('super_admin','admin','staff'),(req,res)=>{const c=t=>db.prepare(`SELECT COUNT(*) n FROM ${t}`).get().n; res.json({metrics:{enquiries:c('quote_requests'),newQuotes:db.prepare("SELECT COUNT(*) n FROM quote_requests WHERE status='New'").get().n,activeProjects:db.prepare("SELECT COUNT(*) n FROM projects WHERE status NOT IN('Completed','Cancelled')").get().n,completedProjects:db.prepare("SELECT COUNT(*) n FROM projects WHERE status='Completed'").get().n,clients:db.prepare("SELECT COUNT(*) n FROM users WHERE role='client'").get().n,unread:db.prepare("SELECT COUNT(*) n FROM contact_messages WHERE status='Unread'").get().n},quotes:db.prepare('SELECT q.*,s.name service FROM quote_requests q LEFT JOIN services s ON s.id=q.service_id ORDER BY q.created_at DESC LIMIT 30').all(),appointments:db.prepare('SELECT * FROM appointments ORDER BY created_at DESC LIMIT 20').all(),messages:db.prepare('SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 20').all()});});
 const QUOTE_STATUSES=['New','Under Review','Contacted','Quotation Sent','Approved','In Progress','Completed','Cancelled'];
 const APPOINTMENT_STATUSES=['Pending','Confirmed','Completed','Cancelled'];
@@ -383,10 +436,9 @@ const page=(req,fallback=25)=>{const limit=Math.min(Math.max(Number(req.query.li
 // attached -- which the dashboard previously had no way to reach at all.
 /* ---------------------------------------------------------------- settings */
 
-// Company details and the homepage statistics. These previously had no write
-// path at all: changing the phone number meant hand-writing SQL.
-const SETTING_KEYS=['company_name','tagline','email','phone','address','hours','whatsapp',
-  'books_published','authors_supported','projects_completed','years_experience','organisations_served'];
+// Company details. These previously had no write path at all: changing the
+// phone number meant hand-writing SQL.
+const SETTING_KEYS=['company_name','tagline','email','phone','address','hours','whatsapp'];
 
 app.get('/api/admin/settings',auth('super_admin','admin'),(req,res)=>{
   const stored=Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map(x=>[x.key,x.value]));
@@ -567,6 +619,9 @@ app.patch('/api/admin/users/:id',auth(MANAGER_ROLES),(req,res)=>{
     if(!active&&target.role==='super_admin'&&me.role!=='super_admin')
       return res.status(403).json({error:'Only a super admin can deactivate a super admin.',field:'is_active'});
     updates.is_active=active;
+    // Restoring access should actually restore it. A lockout from before the
+    // account was switched off would otherwise keep refusing them afterwards.
+    if(active){clearFailures(`user:${target.email}`); clearFailures(`2fa:${target.id}`);}
   }
   for(const field of ['name','phone']) if(field in req.body) updates[field]=clean(req.body[field]);
   if(!Object.keys(updates).length)return res.status(400).json({error:'No changes supplied'});
@@ -591,8 +646,55 @@ app.post('/api/admin/users/:id/reset-2fa',auth(MANAGER_ROLES),(req,res)=>{
   audit(req,'staff_2fa_reset','user',target.id);
   res.json({ok:true});});
 
+// Removing an account outright, for the ones that should never have existed:
+// a colleague added with the wrong address, a duplicate, an account made while
+// testing. Someone who has actually done work here is deactivated instead, and
+// the route says so rather than quietly destroying what they were part of.
+app.delete('/api/admin/users/:id',auth(MANAGER_ROLES),(req,res)=>{
+  const target=db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
+  if(!target)return res.status(404).json({error:'Account not found'});
+  const me=req.session.user;
+  if(String(target.id)===String(me.id))return res.status(403).json({error:'You cannot delete your own account.'});
+  if(target.role==='super_admin'&&me.role!=='super_admin')
+    return res.status(403).json({error:'Only a super admin can delete a super admin.'});
+  if(target.role==='super_admin'&&countActiveSuperAdmins()<=1)
+    return res.status(409).json({error:'This is the last active super admin. Promote someone else first.'});
+
+  // Work this person is attached to. Deleting the row would either orphan these
+  // records or take a client's correspondence and project history with it, so
+  // the account is kept and the caller is told what is holding it.
+  const held=[
+    ['project',db.prepare('SELECT COUNT(*) n FROM projects WHERE client_id=? OR assigned_to=?').get(target.id,target.id).n],
+    ['message',db.prepare('SELECT COUNT(*) n FROM messages WHERE sender_id=?').get(target.id).n],
+    ['quote request',db.prepare('SELECT COUNT(*) n FROM quote_requests WHERE user_id=? OR assigned_to=?').get(target.id,target.id).n],
+    ['uploaded file',db.prepare('SELECT COUNT(*) n FROM files WHERE uploaded_by=?').get(target.id).n],
+    ['article',db.prepare('SELECT COUNT(*) n FROM blog_posts WHERE author_id=?').get(target.id).n],
+  ].filter(([,n])=>n>0);
+  if(held.length)return res.status(409).json({
+    error:`This account is attached to ${held.map(([noun,n])=>`${n} ${noun}${n===1?'':'s'}`).join(', ')}. Deactivate it instead — that blocks sign-in immediately and keeps the records intact.`,
+    held:Object.fromEntries(held)});
+
+  // The audit trail outlives the account, so it records the address too: the
+  // row it would otherwise point at is about to stop existing.
+  audit(req,'staff_deleted','user',`${target.id} (${target.email})`);
+  db.transaction(()=>{
+    db.prepare('DELETE FROM notifications WHERE user_id=?').run(target.id);
+    db.prepare('DELETE FROM users WHERE id=?').run(target.id);
+  })();
+  // The brute-force counters are keyed on the address and the id, not on a
+  // foreign key, so they outlive the row. Left behind, a lockout earned by the
+  // old account lands on whoever next registers that address — including the
+  // same person coming back as a client, who would be refused with "too many
+  // attempts" for a password they had just chosen.
+  clearFailures(`user:${target.email}`);
+  clearFailures(`2fa:${target.id}`);
+  // Reset tokens and remembered devices go with it through ON DELETE CASCADE,
+  // and any session the account still held dies on its next request, because
+  // auth() re-reads the user row every time and finds nothing.
+  res.json({ok:true});});
+
 app.get('/api/admin/quotes/:id',auth(STAFF_ROLES),(req,res)=>{
-  const q=db.prepare('SELECT q.*,s.name service,u.name assigned_name FROM quote_requests q LEFT JOIN services s ON s.id=q.service_id LEFT JOIN users u ON u.id=q.assigned_to WHERE q.id=?').get(req.params.id);
+  const q=db.prepare('SELECT q.*,s.name service,u.name assigned_name,c.name client_name,c.email client_email FROM quote_requests q LEFT JOIN services s ON s.id=q.service_id LEFT JOIN users u ON u.id=q.assigned_to LEFT JOIN users c ON c.id=q.user_id WHERE q.id=?').get(req.params.id);
   if(!q)return res.status(404).json({error:'Quote request not found'});
   q.files=db.prepare('SELECT id,original_name,mime_type,size,created_at FROM files WHERE quote_id=? ORDER BY id').all(q.id);
   res.json(q);});
@@ -633,7 +735,31 @@ app.get('/api/admin/audit',auth('super_admin','admin'),(req,res)=>{const {limit,
 app.patch('/api/admin/quotes/:id',auth(STAFF_ROLES),(req,res)=>{if(!QUOTE_STATUSES.includes(req.body.status))return res.status(400).json({error:'Invalid status'}); // admin_notes is only written when the field is actually supplied. It used to
 // be assigned unconditionally, so changing a quote's status through the
 // dashboard dropdown silently erased whatever notes were already there.
-const notes='admin_notes' in req.body?clean(req.body.admin_notes):null; const info=db.prepare('UPDATE quote_requests SET status=?,assigned_to=COALESCE(?,assigned_to),admin_notes=COALESCE(?,admin_notes) WHERE id=?').run(req.body.status,req.body.assigned_to||null,notes,req.params.id); if(!info.changes)return res.status(404).json({error:'Quote request not found'}); audit(req,'update','quote_request',req.params.id); res.json({ok:true});});
+const notes='admin_notes' in req.body?clean(req.body.admin_notes):null;
+// Attaching an anonymous enquiry to a client account. The portal no longer
+// matches on the email address a visitor typed, because anyone can type
+// anyone's; a member of staff who has spoken to the person makes the link
+// instead. Passing null detaches it again.
+let link;
+if('user_id' in req.body){
+  if(req.body.user_id===null||req.body.user_id==='')link=null;
+  else{const client=db.prepare("SELECT id FROM users WHERE id=? AND role='client'").get(req.body.user_id);
+    if(!client)return res.status(400).json({error:'That client account does not exist.',field:'user_id'});
+    link=client.id;}}
+// Listing users needs a manager role, so the dashboard names the account by the
+// address instead of offering a picker. Resolving an address is safe here in a
+// way it is not in the portal: this is a member of staff asserting a link they
+// have established, not a visitor asserting who they are.
+else if('client_email' in req.body){
+  const wanted=normaliseEmail(req.body.client_email);
+  if(!wanted)link=null;
+  else{const client=db.prepare("SELECT id FROM users WHERE email=? AND role='client'").get(wanted);
+    if(!client)return res.status(400).json({error:'No client account uses that email address.',field:'client_email'});
+    link=client.id;}}
+const info=db.prepare('UPDATE quote_requests SET status=?,assigned_to=COALESCE(?,assigned_to),admin_notes=COALESCE(?,admin_notes) WHERE id=?').run(req.body.status,req.body.assigned_to||null,notes,req.params.id);
+if(!info.changes)return res.status(404).json({error:'Quote request not found'});
+if(link!==undefined){db.prepare('UPDATE quote_requests SET user_id=? WHERE id=?').run(link,req.params.id); audit(req,link?'quote_linked_to_client':'quote_unlinked','quote_request',req.params.id);}
+audit(req,'update','quote_request',req.params.id); res.json({ok:true});});
 app.post('/api/admin/services',auth('super_admin','admin'),(req,res)=>{try{const d=z.object({name:z.string().min(2),summary:z.string().min(10),description:z.string().min(20),featured:z.boolean().optional()}).parse(req.body); const x=db.prepare('INSERT INTO services(name,slug,summary,description,featured,sort_order) VALUES(?,?,?,?,?,?)').run(clean(d.name),slugify(d.name,{lower:true,strict:true}),clean(d.summary),clean(d.description),d.featured?1:0,99); audit(req,'create','service',x.lastInsertRowid); res.status(201).json({ok:true,id:x.lastInsertRowid});}catch(e){res.status(400).json({error:'Invalid or duplicate service'});}});
 app.patch('/api/admin/services/:id',auth('super_admin','admin'),(req,res)=>{const f=['name','summary','description','featured','sort_order']; const data=Object.fromEntries(f.filter(k=>k in req.body).map(k=>[k,k==='featured'?(req.body[k]?1:0):clean(req.body[k])])); if(!Object.keys(data).length)return res.status(400).json({error:'No changes supplied'}); const sets=Object.keys(data).map(k=>`${k}=?`).join(','); db.prepare(`UPDATE services SET ${sets} WHERE id=?`).run(...Object.values(data),req.params.id); audit(req,'update','service',req.params.id); res.json({ok:true});});
 app.delete('/api/admin/services/:id',auth('super_admin','admin'),(req,res)=>{db.prepare('DELETE FROM services WHERE id=?').run(req.params.id); audit(req,'delete','service',req.params.id); res.json({ok:true});});
@@ -646,7 +772,14 @@ app.post('/api/admin/projects/:id/messages',auth(STAFF_ROLES),(req,res)=>{
   audit(req,'message_sent','project',project.id);
   res.status(201).json({ok:true,message:db.prepare('SELECT m.*,u.name sender FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?').get(info.lastInsertRowid)});
 });
-app.get('/api/client/portal',auth('client'),(req,res)=>res.json({projects:db.prepare('SELECT * FROM projects WHERE client_id=? ORDER BY created_at DESC').all(req.session.user.id).map(p=>({...p,milestones:db.prepare('SELECT * FROM milestones WHERE project_id=? ORDER BY sort_order').all(p.id),files:db.prepare('SELECT id,original_name,mime_type,size,approved,created_at FROM files WHERE project_id=?').all(p.id),messages:db.prepare('SELECT m.*,u.name sender FROM messages m JOIN users u ON u.id=m.sender_id WHERE project_id=? ORDER BY m.created_at').all(p.id)})),quotes:db.prepare('SELECT * FROM quote_requests WHERE user_id=? OR email=? ORDER BY created_at DESC').all(req.session.user.id,req.session.user.email),appointments:db.prepare('SELECT * FROM appointments WHERE user_id=? OR email=? ORDER BY created_at DESC').all(req.session.user.id,req.session.user.email),invoices:db.prepare('SELECT i.* FROM invoices i JOIN projects p ON p.id=i.project_id WHERE p.client_id=?').all(req.session.user.id)}));
+// Everything here is keyed on the account id, never on the email address the
+// account claims. Quotes and appointments used to match `user_id=? OR email=?`
+// so that someone who enquired anonymously could see it after registering —
+// but nothing verifies an address at sign-up, so registering as
+// someone@theirfirm.co.ke handed you their enquiry and their manuscript. An
+// email address is a name, not a credential. Staff attach an anonymous enquiry
+// to an account deliberately, from the dashboard.
+app.get('/api/client/portal',auth('client'),(req,res)=>res.json({projects:db.prepare('SELECT * FROM projects WHERE client_id=? ORDER BY created_at DESC').all(req.session.user.id).map(p=>({...p,milestones:db.prepare('SELECT * FROM milestones WHERE project_id=? ORDER BY sort_order').all(p.id),files:db.prepare('SELECT id,original_name,mime_type,size,approved,created_at FROM files WHERE project_id=?').all(p.id),messages:db.prepare('SELECT m.*,u.name sender FROM messages m JOIN users u ON u.id=m.sender_id WHERE project_id=? ORDER BY m.created_at').all(p.id)})),quotes:db.prepare('SELECT * FROM quote_requests WHERE user_id=? ORDER BY created_at DESC').all(req.session.user.id),appointments:db.prepare('SELECT * FROM appointments WHERE user_id=? ORDER BY created_at DESC').all(req.session.user.id),invoices:db.prepare('SELECT i.* FROM invoices i JOIN projects p ON p.id=i.project_id WHERE p.client_id=?').all(req.session.user.id)}));
 app.patch('/api/client/profile',auth('client'),(req,res)=>{try{
   const d=z.object({name:z.string().trim().min(2),email:z.string(),phone:z.string().min(1)}).parse(req.body);
   const email=requestEmail(d.email); const phone=requestPhone(d.phone,req.body.phone_country);
@@ -665,16 +798,16 @@ app.post('/api/client/projects/:id/messages',auth('client'),(req,res)=>{
   audit(req,'message_sent','project',project.id);
   res.status(201).json({ok:true,message:db.prepare('SELECT m.*,u.name sender FROM messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?').get(info.lastInsertRowid)});
 });
-app.get('/api/files/:id',auth(),async(req,res)=>{const f=db.prepare('SELECT f.*,p.client_id,q.user_id quote_user,q.email quote_email FROM files f LEFT JOIN projects p ON p.id=f.project_id LEFT JOIN quote_requests q ON q.id=f.quote_id WHERE f.id=?').get(req.params.id); if(!f)return res.status(404).json({error:'File not found'}); const u=req.session.user, staff=['super_admin','admin','staff'].includes(u.role), mine=f.uploaded_by===u.id, owns=mine||f.client_id===u.id||f.quote_user===u.id||f.quote_email===u.email; const gate=f.project_id?(mine||!!f.approved):true; if(!staff&&!(owns&&gate))return res.status(403).json({error:'Not authorised'}); try{const file=await downloadUpload(f.stored_name); audit(req,'download','file',f.id); res.setHeader('Content-Disposition',`attachment; filename="${safeFileName(f.original_name)}"`); if(file.contentType)res.type(file.contentType); if(file.type==='path'){if(!fs.existsSync(file.value))return res.status(404).json({error:'File not found'}); return res.sendFile(path.resolve(file.value));} file.value.pipe(res);}catch(e){res.status(404).json({error:'File not found'});}});
+app.get('/api/files/:id',auth(),async(req,res)=>{const f=db.prepare('SELECT f.*,p.client_id,q.user_id quote_user FROM files f LEFT JOIN projects p ON p.id=f.project_id LEFT JOIN quote_requests q ON q.id=f.quote_id WHERE f.id=?').get(req.params.id); if(!f)return res.status(404).json({error:'File not found'}); const u=req.session.user, staff=['super_admin','admin','staff'].includes(u.role), mine=f.uploaded_by===u.id, owns=mine||f.client_id===u.id||f.quote_user===u.id; const gate=f.project_id?(mine||!!f.approved):true; if(!staff&&!(owns&&gate))return res.status(403).json({error:'Not authorised'}); try{const file=await downloadUpload(f.stored_name); audit(req,'download','file',f.id); res.setHeader('Content-Disposition',`attachment; filename="${safeFileName(f.original_name)}"`); if(file.contentType)res.type(file.contentType); if(file.type==='path'){if(!fs.existsSync(file.value))return res.status(404).json({error:'File not found'}); return res.sendFile(path.resolve(file.value));} file.value.pipe(res);}catch(e){res.status(404).json({error:'File not found'});}});
 app.get('/robots.txt',(req,res)=>res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /portal\nDisallow: /thank-you\nSitemap: ${baseUrl(req)}/sitemap.xml`));
 // Fragments like /#services are not separate URLs to a crawler; the service
 // pages below are, so those are what the sitemap now lists.
-app.get('/sitemap.xml',(req,res)=>{const b=baseUrl(req); const paths=['/',...serviceSlugs().map(s=>`/services/${s.slug}`)]; res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map(p=>`<url><loc>${b}${p}</loc><changefreq>${p==='/'?'weekly':'monthly'}</changefreq><priority>${p==='/'?'1.0':'0.8'}</priority></url>`).join('')}</urlset>`)});
+app.get('/sitemap.xml',(req,res)=>{const b=baseUrl(req); const paths=['/','/privacy',...serviceSlugs().map(s=>`/services/${s.slug}`)]; res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map(p=>`<url><loc>${b}${p}</loc><changefreq>${p==='/'?'weekly':'monthly'}</changefreq><priority>${p==='/'?'1.0':'0.8'}</priority></url>`).join('')}</urlset>`)});
 app.get('/favicon.ico',(req,res)=>res.redirect(301,'/favicon.svg'));
 app.get('/',(req,res)=>res.type('html').send(renderHome(req)));
 app.get('/services/:slug',(req,res)=>{const s=serviceBySlug(req.params.slug); if(!s)return res.status(404).type('html').send(renderNotFound(req)); res.type('html').send(renderService(req,s));});
 app.get('/thank-you',(req,res)=>{const flash=req.session.flash; delete req.session.flash; if(!flash)return res.redirect(303,'/'); res.type('html').send(renderThanks(req,flash));});
-app.get('/admin',(req,res)=>res.type('html').send(renderAdmin(req))); app.get('/portal',(req,res)=>res.type('html').send(renderPortal(req))); app.get('/reset-password',(req,res)=>res.sendFile(path.join(root,'frontend','reset.html')));
+app.get('/admin',(req,res)=>res.type('html').send(renderAdmin(req))); app.get('/portal',(req,res)=>res.type('html').send(renderPortal(req))); app.get('/reset-password',(req,res)=>res.type('html').send(renderReset())); app.get('/privacy',(req,res)=>res.type('html').send(renderPrivacy(req)));
 // Anything unmatched is genuinely missing. This used to return the homepage
 // with a 200, which makes every typo a soft 404 that crawlers happily index.
 app.use((req,res)=>req.path.startsWith('/api/')?res.status(404).json({error:'Not found'}):res.status(404).type('html').send(renderNotFound(req)));
@@ -689,6 +822,8 @@ app.use((err,req,res,next)=>{
     :'Something went wrong. Please try again.';
   // A browser posting a form should land on a page, not on raw JSON.
   if(status<500&&typeof wantsHtml==='function'&&wantsHtml(req)&&req.method==='POST')return failHtml(req,res,message);
-  res.status(status).json({error:message});
+  // Named so the browser can tell a stale token apart from "you may not do
+  // that" and quietly fetch a fresh one, instead of the caller pressing again.
+  res.status(status).json(csrfFailure?{error:message,code:'EBADCSRFTOKEN'}:{error:message});
 });
 const port=process.env.PORT||3000; if(process.env.NODE_ENV!=='test')app.listen(port,()=>console.log(`Wise Pen platform running on http://localhost:${port}`)); export default app;
